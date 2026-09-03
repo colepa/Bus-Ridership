@@ -1,0 +1,14 @@
+node_modules/
+dist/
+build/
+coverage/
+
+# Secrets — see CLAUDE.md hard rules. Never commit these.
+.env
+.env.*
+!.env.example
+
+*.log
+.DS_Store
+.vscode/
+.idea/
