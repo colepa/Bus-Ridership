@@ -5,7 +5,8 @@ Usage (with the app running on port 8000):
     uv run python fake_tap.py student-1 "Test Student One"
 
 Optional: --door <door_id> to tap on a different bus (default: fake-bus-1).
-    uv run python fake_tap.py student-1 --door fake-bus-2
+    uv run python fake_tap.py fake-student-001 "Esme Reyes" --door fake-bus-2
+Buses 2-4 and their students are in fake_buses.json. For a whole route, use simulate.py.
 Use a real door_id (from the page URL after clicking a bus) to tap on that bus.
 
 Optional: --type <notification_type> to send something other than an accepted tap.
@@ -42,16 +43,8 @@ def pop_flag(args, flag, default):
     return value
 
 
-def main():
-    args = sys.argv[1:]
-    kind = pop_flag(args, "--type", "door_keycard_entered_accepted")
-    door_id = pop_flag(args, "--door", "fake-bus-1")
-    if not args:
-        print(__doc__)
-        sys.exit(1)
-    user_id = args[0]
-    name = args[1] if len(args) > 1 else user_id
-
+def send_tap(user_id, name, door_id, kind="door_keycard_entered_accepted"):
+    """Post one signed fake event to the app. Returns the httpx response."""
     now = int(time.time())
     # Same shape as a real capture, trimmed to the fields the app reads.
     payload = {
@@ -75,10 +68,23 @@ def main():
     ts = str(now)
     sig = hmac.new(SECRET.encode(), body + b"|" + ts.encode(), hashlib.sha256).hexdigest()
 
-    r = httpx.post(URL, content=body, headers={
+    return httpx.post(URL, content=body, headers={
         "Content-Type": "application/json",
         "Verkada-Signature": f"{ts}|{sig}",
     })
+
+
+def main():
+    args = sys.argv[1:]
+    kind = pop_flag(args, "--type", "door_keycard_entered_accepted")
+    door_id = pop_flag(args, "--door", "fake-bus-1")
+    if not args:
+        print(__doc__)
+        sys.exit(1)
+    user_id = args[0]
+    name = args[1] if len(args) > 1 else user_id
+
+    r = send_tap(user_id, name, door_id, kind)
     print(r.status_code, r.text)
 
 

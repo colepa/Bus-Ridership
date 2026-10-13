@@ -28,7 +28,7 @@ import verkada_api  # after load_dotenv, so it sees VERKADA_REGION
 SECRET = os.environ["VERKADA_WEBHOOK_SECRET"]
 STATE_FILE = HERE / "state.json"
 
-DEBOUNCE_SECONDS = 30       # a second tap by the same student within this is ignored
+DEBOUNCE_SECONDS = 3       # a second tap by the same student within this is ignored
 MAX_SIGNATURE_AGE = 60      # seconds; matches Verkada's own sample
 BOARDING_EVENTS = {"door_keycard_entered_accepted"}
 REJECTED_EVENTS = {"door_keycard_entered_rejected"}
@@ -54,6 +54,14 @@ REJECTED_EVENTS = {"door_keycard_entered_rejected"}
 #             "roster": {"<user_id>": "Student Name"},
 #         },
 #     },
+#     # Finished routes, oldest first. "Start route" moves the bus's previous
+#     # route here (with a copy of the roster at the time) before clearing it.
+#     # This is what student lookup reads. "demo": True marks made-up history
+#     # from `simulate.py history`.
+#     "past_routes": [
+#         {"door_id": "...", "bus_name": "Bus 12", "started_at": ..., "ended_at": ...,
+#          "roster": {...}, "taps": {...}, "alerts": {...}},
+#     ],
 # }
 #
 # All endpoints below are `async def`, so FastAPI runs them one at a time on a
@@ -63,9 +71,10 @@ def load_state():
     if STATE_FILE.exists():
         loaded = json.loads(STATE_FILE.read_text())
         if "buses" in loaded:
+            loaded.setdefault("past_routes", [])
             return loaded
         # state.json from the single-bus version: start fresh (it's a demo).
-    return {"buses": {}}
+    return {"buses": {}, "past_routes": []}
 
 
 def save_state():
@@ -78,8 +87,28 @@ def save_state():
 state = load_state()
 
 
+def add_fake_buses():
+    """Make sure the made-up buses in fake_buses.json exist, with their rosters.
+
+    They aren't doors in Command, so "Refresh roster" never touches them.
+    Taps come from fake_tap.py / simulate.py. Delete the file to drop them
+    (and remove their entries from state.json).
+    """
+    path = HERE / "fake_buses.json"
+    if not path.exists():
+        return
+    for door_id, info in json.loads(path.read_text()).items():
+        bus = state["buses"].setdefault(door_id, new_bus(info["name"]))
+        bus["name"] = info["name"]
+        bus["roster"] = info["roster"]
+    save_state()
+
+
 def new_bus(name):
     return {"name": name, "route": None, "taps": {}, "alerts": {}, "roster": {}}
+
+
+add_fake_buses()
 
 
 def route_active(bus):
@@ -88,30 +117,39 @@ def route_active(bus):
 
 # ------------------------------------------------------------ manifest ----
 
+def counted_taps(taps):
+    """Group taps by student: {user_id: [tap, ...]}, oldest first.
+
+    A tap within DEBOUNCE_SECONDS of that student's previous counted tap is
+    dropped (an accidental double tap). Taps 1, 3, 5... are "on", 2, 4... "off".
+    """
+    by_student = {}
+    for tap in sorted(taps.values(), key=lambda t: t["time"]):
+        mine = by_student.setdefault(tap["user_id"], [])
+        if mine and tap["time"] - mine[-1]["time"] < DEBOUNCE_SECONDS:
+            continue
+        mine.append(tap)
+    return by_student
+
+
 def compute_manifest(bus):
     """Return (on_bus, off_bus, not_boarded) lists of students for one bus.
 
-    For each student: sort their taps by time, drop any within DEBOUNCE_SECONDS
-    of the previous counted tap, then count. Odd = on the bus, even = off.
+    Odd number of counted taps = on the bus, even = off.
     not_boarded = on the roster, no accepted tap this route.
+    wrong_bus = tapped on but not on this bus's roster.
     """
-    taps_by_student = {}
-    for tap in sorted(bus["taps"].values(), key=lambda t: t["time"]):
-        taps_by_student.setdefault(tap["user_id"], []).append(tap)
+    taps_by_student = counted_taps(bus["taps"])
 
     on_bus, off_bus = [], []
-    for user_id, student_taps in taps_by_student.items():
-        counted = []
-        for tap in student_taps:
-            if counted and tap["time"] - counted[-1]["time"] < DEBOUNCE_SECONDS:
-                continue
-            counted.append(tap)
-
+    for user_id, counted in taps_by_student.items():
         student = {
             "user_id": user_id,
             "name": bus["roster"].get(user_id) or counted[-1]["name"],
             "taps": len(counted),
+            "on_at": counted[0]["time"],
             "last_tap": counted[-1]["time"],
+            "wrong_bus": bool(bus["roster"]) and user_id not in bus["roster"],
         }
         if len(counted) % 2 == 1:
             on_bus.append(student)
@@ -124,6 +162,88 @@ def compute_manifest(bus):
         if user_id not in taps_by_student
     ]
     return on_bus, off_bus, not_boarded
+
+
+def count_flags(bus, on_bus, off_bus):
+    """Things a dispatcher should look at: rejected scans, wrong-bus riders,
+    and (once the route has ended) anyone who never tapped off."""
+    flags = len(bus["alerts"])
+    flags += sum(1 for s in on_bus + off_bus if s["wrong_bus"])
+    if bus["route"] is not None and not route_active(bus):
+        flags += sum(1 for s in on_bus if not s["wrong_bus"])
+    return flags
+
+
+def assigned_buses(user_id):
+    """Names of the buses whose roster has this student."""
+    return [bus["name"] for bus in state["buses"].values() if user_id in bus["roster"]]
+
+
+# ------------------------------------------------------- student lookup ----
+
+def current_routes():
+    """Each bus's current route (running or ended, not yet replaced), in the
+    same shape as an entry of state["past_routes"]."""
+    routes = []
+    for door_id, bus in state["buses"].items():
+        if bus["route"] is None:
+            continue
+        routes.append({
+            "door_id": door_id, "bus_name": bus["name"],
+            "started_at": bus["route"]["started_at"], "ended_at": bus["route"]["ended_at"],
+            "roster": bus["roster"], "taps": bus["taps"], "alerts": bus["alerts"],
+        })
+    return routes
+
+
+def student_rows(route, user_id):
+    """What happened to one student on one route, as rows for the history table.
+
+    Usually one row. A student who rode twice on one route gets two; a student
+    with nothing to do with this route gets none.
+    """
+    base = {"door_id": route["door_id"], "bus_name": route["bus_name"],
+            "route_started": route["started_at"], "on": None, "off": None}
+    assigned = user_id in route["roster"]
+    rows = []
+
+    taps = counted_taps(route["taps"]).get(user_id, [])
+    for i in range(0, len(taps), 2):        # pairs: (on, off)
+        on = taps[i]["time"]
+        off = taps[i + 1]["time"] if i + 1 < len(taps) else None
+        if route["roster"] and not assigned:
+            status = "wrong_bus"
+        elif off is not None:
+            status = "dropped_off"
+        elif route["ended_at"] is None:
+            status = "aboard"
+        else:
+            status = "left_on_bus"
+        rows.append({**base, "on": on, "off": off, "status": status})
+
+    for alert in route["alerts"].values():
+        if alert["user_id"] == user_id:
+            rows.append({**base, "on": alert["time"], "status": "rejected"})
+
+    if not rows and assigned:
+        rows.append({**base, "status": "not_boarded" if route["ended_at"] is None else "no_show"})
+    return rows
+
+
+def all_students():
+    """Everyone we know about: every roster, plus anyone who has ever tapped."""
+    students = {}
+    for bus in state["buses"].values():
+        for user_id, name in bus["roster"].items():
+            students.setdefault(user_id, {"user_id": user_id, "name": name, "buses": []})
+            students[user_id]["buses"].append(bus["name"])
+    for route in state["past_routes"] + current_routes():
+        for tap in list(route["taps"].values()) + list(route["alerts"].values()):
+            if tap.get("user_id") and tap["user_id"] not in students:
+                students[tap["user_id"]] = {"user_id": tap["user_id"],
+                                            "name": tap.get("name") or tap["user_id"],
+                                            "buses": []}
+    return students
 
 
 # ------------------------------------------------------------- webhook ----
@@ -221,9 +341,11 @@ async def buses():
             "door_id": door_id,
             "name": bus["name"],
             "route": bus["route"],
+            "roster": len(bus["roster"]),
             "on_bus": len(on_bus),
+            "off_bus": len(off_bus),
             "not_boarded": len(not_boarded),
-            "alerts": len(bus["alerts"]),
+            "flags": count_flags(bus, on_bus, off_bus),
         })
     summary.sort(key=lambda b: b["name"])
     return summary
@@ -235,16 +357,68 @@ async def bus_manifest(door_id: str):
     if bus is None:
         return JSONResponse({"error": "no such bus"}, status_code=404)
     on_bus, off_bus, not_boarded = compute_manifest(bus)
-    alerts = sorted(bus["alerts"].values(), key=lambda a: a["time"], reverse=True)
+    # Copies with "assigned" added, so the page can say "assigned to Bus 3".
+    alerts = [
+        {**a, "assigned": assigned_buses(a["user_id"]) if a["user_id"] else []}
+        for a in sorted(bus["alerts"].values(), key=lambda a: a["time"], reverse=True)
+    ]
     return {
         "door_id": door_id,
         "name": bus["name"],
         "route": bus["route"],
+        "roster": [{"user_id": u, "name": n} for u, n in bus["roster"].items()],
         "on_bus": on_bus,
         "off_bus": off_bus,
         "not_boarded": not_boarded,
         "alerts": alerts,
+        "flags": count_flags(bus, on_bus, off_bus),
     }
+
+
+@app.get("/students")
+async def students():
+    """Everyone, for the search box: [{user_id, name, buses: [bus names]}]."""
+    return sorted(all_students().values(), key=lambda s: s["name"])
+
+
+@app.get("/student/{user_id}")
+async def student(user_id: str):
+    """One student's assigned buses, where they are now, and every past ride."""
+    info = all_students().get(user_id)
+    if info is None:
+        return JSONResponse({"error": "no such student"}, status_code=404)
+
+    now_rows = []
+    for route in current_routes():
+        if route["ended_at"] is None:
+            now_rows += student_rows(route, user_id)
+
+    history = []
+    for route in state["past_routes"] + current_routes():
+        history += student_rows(route, user_id)
+    history.sort(key=lambda r: (r["route_started"], r["on"] or 0), reverse=True)
+
+    return {
+        "user_id": user_id,
+        "name": info["name"],
+        "buses": info["buses"],
+        # Most important first: a student aboard somewhere beats "not boarded" elsewhere.
+        "now": sorted(now_rows, key=lambda r: r["status"] != "aboard"),
+        "history": history,
+    }
+
+
+@app.post("/demo/history")
+async def demo_history(request: Request):
+    """`simulate.py history` posts made-up past routes here.
+    Replaces any made-up history from an earlier run; real routes are kept."""
+    routes = await request.json()
+    for route in routes:
+        route["demo"] = True
+    real = [r for r in state["past_routes"] if not r.get("demo")]
+    state["past_routes"] = sorted(real + routes, key=lambda r: r["started_at"])
+    save_state()
+    return {"ok": True, "routes": len(routes)}
 
 
 @app.post("/bus/{door_id}/route/start")
@@ -252,7 +426,14 @@ async def start_route(door_id: str):
     bus = state["buses"].get(door_id)
     if bus is None:
         return JSONResponse({"error": "no such bus"}, status_code=404)
-    # Starting a route throws away this bus's previous taps and alerts (no history yet).
+    # Move the previous route (if anything happened on it) into history, then start clean.
+    if bus["route"] is not None and (bus["taps"] or bus["alerts"]):
+        state["past_routes"].append({
+            "door_id": door_id, "bus_name": bus["name"],
+            "started_at": bus["route"]["started_at"],
+            "ended_at": bus["route"]["ended_at"] or int(time.time()),
+            "roster": dict(bus["roster"]), "taps": bus["taps"], "alerts": bus["alerts"],
+        })
     bus["route"] = {"started_at": int(time.time()), "ended_at": None}
     bus["taps"] = {}
     bus["alerts"] = {}

@@ -66,20 +66,30 @@ github.com/colepa/Bus-Ridership.
   levels, groups, users)
 - `index.html` — overview of all buses; click one for its manifest
 - `fake_tap.py` — signed fake taps (`--door`, `--type`, `unknown` user)
+- `simulate.py` — plays out a route (`board` / `dropoff`) with fake taps
+- `fake_buses.json` — buses 2–4, made up, not in Command; loaded at startup
+- `seed_users.py` — adds 49 `busdemo-` test users to Bus 1's group in
+  Command (`--delete` removes them)
 - `tools/verkada-probe/` — the original capture scripts (webhook + `GET /v2/events`)
 
 **Decisions made (details in `verkada-notes.md`)**
 - Each door in Command = one bus. Every door in the org is listed.
 - One reader per bus, taps toggle on/off. No In/Out doors (student
   compliance risk). Taps stored by `event_id`; on/off recomputed from sorted
-  taps each time; 30 s debounce.
+  taps each time; 3 s debounce for testing (30 s planned for real use).
 - Only `door_keycard_entered_accepted` boards. `door_unlocked`/`door_locked`
   ignored. `door_keycard_entered_rejected` → alert (unknown card, or known
   student not assigned to this bus), never counted as boarding.
 - Roster = users with access to the door in Command (access levels →
   groups → users). Schedules ignored. Fetched only on "Refresh roster".
-- Routes started/ended by hand per bus. Starting a route clears that bus's
-  taps and alerts (no history).
+- Routes started/ended by hand per bus. Starting a route moves the previous
+  one (with a roster snapshot) into `state["past_routes"]`, then clears it.
+- Student lookup (proposal priority 2): search bar + Students page; student
+  page shows where they are now and every past route (rode, no show, wrong
+  bus, rejected, never tapped off). No stop or video column yet — no GPS,
+  video is the next feature. `simulate.py history` makes 10 days of fake past
+  routes (marked `"demo": true`, replaced on re-run).
+- UI styled after the proposal mock (Command-like: sidebar, tiles, pills).
 - Backfill dropped from scope — testing is stationary with good connectivity.
 
 **How to run**
