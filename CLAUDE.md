@@ -55,6 +55,45 @@ and card numbers from the test org and stays out of git.
   Read before touching the webhook.
 
 
-## Status
+## Status (2026-10-13)
 
-Starting over in Python. Nothing written yet.
+MVP scope 1–4 built and working against the real AC12. Pushed to
+github.com/colepa/Bus-Ridership.
+
+**Files**
+- `app.py` — webhook, per-bus state, manifest logic, page/API endpoints
+- `verkada_api.py` — Command API calls for "Refresh roster" (doors, access
+  levels, groups, users)
+- `index.html` — overview of all buses; click one for its manifest
+- `fake_tap.py` — signed fake taps (`--door`, `--type`, `unknown` user)
+- `tools/verkada-probe/` — the original capture scripts (webhook + `GET /v2/events`)
+
+**Decisions made (details in `verkada-notes.md`)**
+- Each door in Command = one bus. Every door in the org is listed.
+- One reader per bus, taps toggle on/off. No In/Out doors (student
+  compliance risk). Taps stored by `event_id`; on/off recomputed from sorted
+  taps each time; 30 s debounce.
+- Only `door_keycard_entered_accepted` boards. `door_unlocked`/`door_locked`
+  ignored. `door_keycard_entered_rejected` → alert (unknown card, or known
+  student not assigned to this bus), never counted as boarding.
+- Roster = users with access to the door in Command (access levels →
+  groups → users). Schedules ignored. Fetched only on "Refresh roster".
+- Routes started/ended by hand per bus. Starting a route clears that bus's
+  taps and alerts (no history).
+- Backfill dropped from scope — testing is stationary with good connectivity.
+
+**How to run**
+1. `uv run uvicorn app:app --port 8000`
+2. `ngrok http 8000 --url https://hatchery-tactical-moneyless.ngrok-free.dev`
+   (permanent free domain; webhook in Command points at `<that>/webhook`)
+3. Open the dashboard at `http://localhost:8000`, **not** the ngrok URL —
+   the 2 s polling would burn ngrok's 20k requests/month free cap.
+
+**Not yet verified on real hardware**
+- "Refresh roster" against the live API. The docs don't name the door-id
+  field in Get Doors; if the terminal prints `door with no id field`, fix the
+  key lookup in `verkada_api.fetch_buses`.
+
+**Open ideas, not started**
+- Rejected-but-boarded students make the headcount one short (shown as alert).
+- Sync-from-Verkada button using `GET /v2/events` if backfill comes back.
