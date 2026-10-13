@@ -1,0 +1,174 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Bus manifest</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 820px; margin: 2rem auto; padding: 0 1rem; }
+  button { font-size: 1rem; padding: .5rem 1rem; margin-right: .5rem; cursor: pointer; }
+  h2 { margin-top: 2rem; }
+  .red h2 { color: #b00020; }
+  .amber h2 { color: #a15c00; }
+  ul { padding-left: 1.2rem; }
+  li { margin: .25rem 0; }
+  .meta { color: #666; font-size: .9rem; }
+  table { border-collapse: collapse; width: 100%; margin-top: 1rem; }
+  th, td { text-align: left; padding: .5rem; border-bottom: 1px solid #ddd; }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover { background: #f4f4f4; }
+  .warn { color: #b00020; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<!-- Overview: every bus, one row each. -->
+<div id="overview">
+  <h1>Buses</h1>
+  <button onclick="refreshRoster()">Refresh roster</button>
+  <span id="roster-status" class="meta"></span>
+  <table>
+    <thead><tr><th>Bus</th><th>Route</th><th>On bus</th><th>Not boarded</th><th>Alerts</th></tr></thead>
+    <tbody id="bus-rows"></tbody>
+  </table>
+  <p id="no-buses" class="meta" hidden>
+    No buses yet. Press Refresh roster, or tap a card on any reader.
+  </p>
+</div>
+
+<!-- One bus: full manifest. -->
+<div id="detail" hidden>
+  <p><a href="#">← All buses</a></p>
+  <h1 id="bus-name"></h1>
+  <p id="status" class="meta"></p>
+  <button onclick="post('start')">Start route</button>
+  <button onclick="post('end')">End route</button>
+
+  <div id="alerts" class="red" hidden>
+    <h2>Alerts (<span id="alert-count">0</span>)</h2>
+    <ul id="alert-list"></ul>
+  </div>
+
+  <div id="never-off" class="red" hidden>
+    <h2>Never tapped off (<span id="never-off-count">0</span>)</h2>
+    <ul id="never-off-list"></ul>
+  </div>
+
+  <div id="on-bus">
+    <h2>On bus (<span id="on-count">0</span>)</h2>
+    <ul id="on-list"></ul>
+  </div>
+
+  <div class="amber">
+    <h2 id="not-boarded-title">Expected, not boarded (<span id="not-boarded-count">0</span>)</h2>
+    <ul id="not-boarded-list"></ul>
+  </div>
+
+  <h2>Tapped off (<span id="off-count">0</span>)</h2>
+  <ul id="off-list"></ul>
+</div>
+
+<script>
+// The selected bus is the part of the URL after "#". Empty = overview.
+function selectedBus() {
+  return decodeURIComponent(location.hash.slice(1));
+}
+
+function clock(epochSeconds) {
+  return new Date(epochSeconds * 1000).toLocaleTimeString();
+}
+
+function routeText(route) {
+  if (!route) return "Not started";
+  if (route.ended_at !== null) return `Ended ${clock(route.ended_at)}`;
+  return `In progress since ${clock(route.started_at)}`;
+}
+
+function fillList(listId, countId, items, textFor) {
+  const list = document.getElementById(listId);
+  list.innerHTML = "";
+  for (const item of items) {
+    const li = document.createElement("li");
+    li.textContent = textFor(item);
+    list.appendChild(li);
+  }
+  document.getElementById(countId).textContent = items.length;
+}
+
+const studentText = s => `${s.name} — last tap ${clock(s.last_tap)} (${s.taps} taps)`;
+
+// ---- overview ----
+
+async function showOverview() {
+  const buses = await (await fetch("/buses")).json();
+  const rows = document.getElementById("bus-rows");
+  rows.innerHTML = "";
+  for (const b of buses) {
+    const tr = document.createElement("tr");
+    tr.onclick = () => { location.hash = encodeURIComponent(b.door_id); };
+    const cells = [b.name, routeText(b.route), b.on_bus, b.not_boarded, b.alerts];
+    cells.forEach((value, i) => {
+      const td = document.createElement("td");
+      td.textContent = value;
+      if ((i === 3 || i === 4) && value > 0) td.className = "warn";
+      tr.appendChild(td);
+    });
+    rows.appendChild(tr);
+  }
+  document.getElementById("no-buses").hidden = buses.length > 0;
+}
+
+async function refreshRoster() {
+  const status = document.getElementById("roster-status");
+  status.textContent = "Refreshing…";
+  const r = await fetch("/roster/refresh", { method: "POST" });
+  const body = await r.json();
+  status.textContent = r.ok ? `Loaded ${body.buses} doors` : `Failed: ${body.error}`;
+  refresh();
+}
+
+// ---- one bus ----
+
+async function showBus(doorId) {
+  const r = await fetch(`/bus/${encodeURIComponent(doorId)}`);
+  if (!r.ok) { location.hash = ""; return; }
+  const m = await r.json();
+  const ended = m.route && m.route.ended_at !== null;
+
+  document.getElementById("bus-name").textContent = m.name;
+  document.getElementById("status").textContent = routeText(m.route);
+
+  // Once the route has ended, anyone still "on" never tapped off.
+  document.getElementById("never-off").hidden = !ended;
+  document.getElementById("on-bus").hidden = ended;
+  fillList(ended ? "never-off-list" : "on-list", ended ? "never-off-count" : "on-count",
+           m.on_bus, studentText);
+  fillList("off-list", "off-count", m.off_bus, studentText);
+  fillList("not-boarded-list", "not-boarded-count", m.not_boarded, s => s.name);
+
+  // Rejected taps. No user_id = card not assigned to anyone.
+  fillList("alert-list", "alert-count", m.alerts, a => a.user_id
+    ? `${clock(a.time)} — ${a.name} tapped but isn't assigned to this bus`
+    : `${clock(a.time)} — Unrecognized card ${a.card} tapped`);
+  document.getElementById("alerts").hidden = m.alerts.length === 0;
+}
+
+async function post(action) {
+  await fetch(`/bus/${encodeURIComponent(selectedBus())}/route/${action}`, { method: "POST" });
+  refresh();
+}
+
+// ---- refresh loop ----
+
+function refresh() {
+  const doorId = selectedBus();
+  document.getElementById("overview").hidden = !!doorId;
+  document.getElementById("detail").hidden = !doorId;
+  if (doorId) showBus(doorId); else showOverview();
+}
+
+window.onhashchange = refresh;
+refresh();
+setInterval(refresh, 2000);
+</script>
+</body>
+</html>

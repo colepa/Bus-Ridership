@@ -12,3 +12,17 @@ coverage/
 .DS_Store
 .vscode/
 .idea/
+
+# Real captures from the Verkada test org (PII). Never commit.
+tools/verkada-probe/captures/
+
+# Live app state (test-org names). Never commit.
+state.json
+state.tmp
+
+# Python
+.venv/
+__pycache__/
+
+# Internal proposal doc. Not for the repo.
+Paris ASE Project Proposal.pdf
