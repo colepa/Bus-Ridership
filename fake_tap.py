@@ -48,7 +48,7 @@ def send_tap(user_id, name, door_id, kind="door_keycard_entered_accepted"):
     now = int(time.time())
     # Same shape as a real capture, trimmed to the fields the app reads.
     payload = {
-        "org_id": "fake-org",
+        "org_id": None,   # so fake taps don't overwrite the real org_id the app learned
         "webhook_type": "notification",
         "created_at": now,
         "webhook_id": "fake-webhook",

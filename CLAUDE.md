@@ -89,6 +89,19 @@ github.com/colepa/Bus-Ridership.
   bus, rejected, never tapped off). No stop or video column yet — no GPS,
   video is the next feature. `simulate.py history` makes 10 days of fake past
   routes (marked `"demo": true`, replaced on re-run).
+- Video (proposal priority 3): camera = the one linked to the door in Command,
+  from `camera_info.inside_camera_id` in the webhook; stored per tap and per
+  bus. Clip icon opens a pop-up player: `/clip/stream` → `/clip/playlist.m3u8`,
+  which fetches Verkada's HLS playlist and trims the extra chunk past the end
+  (see verkada-notes "Gotcha"), for 5 s before → 5 s after the scan (`CLIP_BEFORE`/`CLIP_AFTER`
+  in app.py; nothing stored, streamed per click), played with hls.js (CDN).
+  "Open in Command" uses `/clip` (Get Link to Footage). Stream is hevc (no
+  `codec=h264`: it 404s once footage is filed to the camera's SD card), so
+  clips need Chrome/Safari on a Mac. One streaming token reused for 25 min
+  (Verkada caps unexpired tokens). Verified 2026-10-13 on old and fresh clips. Fetched on click,
+  never in the webhook. `org_id` for streaming is learned from the webhook.
+  Fake buses can borrow a real camera with an optional `"camera_id"` in
+  `fake_buses.json`.
 - UI styled after the proposal mock (Command-like: sidebar, tiles, pills).
 - Backfill dropped from scope — testing is stationary with good connectivity.
 

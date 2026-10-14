@@ -90,9 +90,10 @@
   /* people rows */
   .section-label { padding: 10px 16px 6px; font-size: 12px; font-weight: 600; color: var(--muted);
                    text-transform: uppercase; letter-spacing: .03em; background: #fafbfc; border-bottom: 1px solid var(--border); }
-  .row { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--border); }
+  .row { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--border);
+         cursor: pointer; }
   .row:last-child { border-bottom: 0; }
-  a.row:hover { background: #f8f9fb; }
+  .row:hover { background: #f8f9fb; }
   .row.flagged { background: #fdf6e3; }
   .row .main { flex: 1; min-width: 0; }
   .row .name { font-weight: 500; }
@@ -111,6 +112,25 @@
   .red-text { color: var(--red); font-weight: 600; }
   .empty-state { padding: 32px; text-align: center; color: var(--muted); }
   td .cell { white-space: nowrap; }
+
+  /* clip icons */
+  .clip { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 6px;
+          color: var(--muted); vertical-align: middle; }
+  a.clip:hover { background: var(--blue-soft); color: var(--blue); }
+  .clip.none { opacity: .35; }
+  td .clip { width: 24px; height: 24px; margin-left: 4px; }
+  .banner .clip { color: inherit; margin-left: auto; width: auto; padding: 0 8px; gap: 4px;
+                  grid-auto-flow: column; text-decoration: none; }
+
+  /* clip player pop-up */
+  .overlay { position: fixed; inset: 0; background: rgba(15, 20, 30, .55); z-index: 50;
+             display: grid; place-items: center; padding: 24px; }
+  .overlay[hidden] { display: none; }
+  .player-card { background: var(--card); border-radius: 12px; width: min(820px, 100%); overflow: hidden;
+                 box-shadow: 0 20px 60px rgba(0,0,0,.3); }
+  .player-card video { display: block; width: 100%; aspect-ratio: 16 / 9; background: #000; }
+  .player-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; }
+  .player-foot .btn { display: inline-flex; align-items: center; }
 
   /* narrow windows (laptop split screen, tablet): sidebar becomes a top strip */
   @media (max-width: 900px) {
@@ -147,6 +167,24 @@
   <!-- Each page is drawn into #page by one of the show... functions below. -->
   <main id="page"></main>
 </div>
+
+<!-- Clip player: footage around a scan. Opened by openClip(). -->
+<div id="player" class="overlay" hidden onclick="if (event.target === this) closeClip()">
+  <div class="player-card">
+    <div class="card-head">
+      <h2 id="player-title"></h2>
+      <button class="btn" onclick="closeClip()">Close</button>
+    </div>
+    <video id="player-video" muted loop playsinline controls></video>
+    <div class="player-foot">
+      <span id="player-status" class="muted"></span>
+      <a id="player-command" class="btn" target="_blank">Open in Command ↗</a>
+    </div>
+  </div>
+</div>
+
+<!-- hls.js plays Verkada's HLS stream in Chrome/Firefox (Safari can play it natively). -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.6.16/hls.min.js"></script>
 
 <script>
 // ------------------------------------------------------------ helpers ----
@@ -192,12 +230,33 @@ function tile(label, value, redIfAny) {
   const red = redIfAny && value > 0 ? "red" : "";
   return `<div class="tile ${red}"><div class="tile-label">${label}</div><div class="tile-value num">${value}</div></div>`;
 }
-function personRow(userId, name, sub, status) {
+// Clip icon: opens Command's player at the scan (via /clip). Greyed out, crossed
+// camera when there's no camera for that bus or no scan to show.
+const CAMERA_SVG = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+  stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+  <rect x="2" y="6" width="14" height="12" rx="2"/><path d="M16 10l6-3v10l-6-3z"/></svg>`;
+const NO_CAMERA_SVG = CAMERA_SVG.replace("</svg>", `<path d="M3 3l18 18"/></svg>`);
+
+function clip(cameraId, time, title) {
+  if (!cameraId || !time) {
+    return `<span class="clip none" title="No clip">${NO_CAMERA_SVG}</span>`;
+  }
+  return clipLink(cameraId, time, title, CAMERA_SVG);
+}
+
+// A link that opens the clip player. The click is handled once, below
+// ("clip clicks"), using these data- attributes.
+function clipLink(cameraId, time, title, inner) {
+  return `<a class="clip" href="#" title="Play clip" data-camera="${esc(cameraId)}"
+             data-at="${time}" data-title="${esc(title)}">${inner}</a>`;
+}
+
+function personRow(userId, name, sub, status, clipHtml) {
   const flagged = FLAGGED.includes(status) ? "flagged" : "";
-  return `<a class="row ${flagged}" href="#student/${encodeURIComponent(userId)}">
+  return `<div class="row ${flagged}" onclick="location.hash='student/${encodeURIComponent(userId)}'">
     <div class="avatar">${esc(initials(name))}</div>
     <div class="main"><div class="name">${esc(name)}</div><div class="sub">${sub}</div></div>
-    ${pill(status)}</a>`;
+    ${pill(status)}${clipHtml}</div>`;
 }
 
 // ------------------------------------------------------- page: buses ----
@@ -247,27 +306,35 @@ async function showBus(doorId) {
   for (const s of m.on_bus) {
     const status = s.wrong_bus ? "wrong_bus" : ended ? "left_on_bus" : "aboard";
     const sub = `On at ${clock(s.on_at)}` + (s.wrong_bus ? " · not on this bus's roster" : "");
-    (status === "aboard" ? aboard : attention).push(personRow(s.user_id, s.name, sub, status));
+    const icon = clip(s.on_camera, s.on_at, `${s.name} · boarded ${m.name} · ${clock(s.on_at)}`);
+    (status === "aboard" ? aboard : attention).push(personRow(s.user_id, s.name, sub, status, icon));
   }
   for (const s of m.off_bus) {
     const status = s.wrong_bus ? "wrong_bus" : "dropped_off";
     const sub = `On at ${clock(s.on_at)} · off at ${clock(s.last_tap)}`;
-    (status === "wrong_bus" ? attention : off).push(personRow(s.user_id, s.name, sub, status));
+    const icon = clip(s.last_camera, s.last_tap, `${s.name} · got off ${m.name} · ${clock(s.last_tap)}`);
+    (status === "wrong_bus" ? attention : off).push(personRow(s.user_id, s.name, sub, status, icon));
   }
   for (const s of m.not_boarded) {
     const status = ended ? "no_show" : "not_boarded";
     const sub = m.route ? "Expected · no scan recorded" : "On this bus's roster";
-    waiting.push(personRow(s.user_id, s.name, sub, status));
+    waiting.push(personRow(s.user_id, s.name, sub, status, ended ? clip(null) : ""));
   }
   const section = (label, rows) => rows.length
     ? `<div class="section-label">${label} · ${rows.length}</div>${rows.join("")}` : "";
 
   // Rejected scans as banners at the top.
   const banners = m.alerts.map(a => {
-    if (!a.user_id) return `<div class="banner">⚠ Unrecognized card ${esc(a.card)} scanned at ${clock(a.time)}</div>`;
+    const who = a.user_id ? a.name : `Unrecognized card ${a.card}`;
+    const view = a.camera_id
+      ? clipLink(a.camera_id, a.time, `${who} · rejected at ${m.name} · ${clock(a.time)}`,
+                 `${CAMERA_SVG} View clip`) : "";
+    if (!a.user_id) {
+      return `<div class="banner">⚠ Unrecognized card ${esc(a.card)} scanned at ${clock(a.time)}${view}</div>`;
+    }
     const where = a.assigned.length ? `assigned ${esc(a.assigned.join(", "))}` : "not assigned to any bus";
     return `<div class="banner">⚠ Wrong bus: <a href="#student/${encodeURIComponent(a.user_id)}">${esc(a.name)}</a>
-            (${where}) scanned at ${clock(a.time)} · card rejected</div>`;
+            (${where}) scanned at ${clock(a.time)} · card rejected${view}</div>`;
   }).join("");
   const leftOn = ended && attention.length
     ? `<div class="banner red">⚠ Route ended with students who never tapped off. Check the bus.</div>` : "";
@@ -291,7 +358,7 @@ async function showBus(doorId) {
     </div>
     ${leftOn}${banners}
     <div class="card">
-      <div class="card-head"><h2>Live manifest</h2><span class="hint">Click a student for their history</span></div>
+      <div class="card-head"><h2>Live manifest</h2><span class="hint">Click a student for their history · camera icon for the scan clip</span></div>
       ${section("Needs attention", attention)}
       ${section("Aboard", aboard)}
       ${section(ended ? "No show" : "Not boarded yet", waiting)}
@@ -328,8 +395,10 @@ async function showStudent(userId) {
       <td>${day(r.route_started)}</td>
       <td><div class="cell"><span class="bus-badge small">${esc(busNumber(r.bus_name))}</span>${esc(r.bus_name)}</div></td>
       <td>${amPm(r.route_started)}</td>
-      <td class="num">${r.on ? clock(r.on) : "—"}</td>
-      <td class="num">${r.off ? clock(r.off) : "—"}</td>
+      <td class="num">${r.on ? clock(r.on) + clip(r.on_camera, r.on,
+        `${s.name} · ${r.status === "rejected" ? "rejected at" : "boarded"} ${r.bus_name} · ${day(r.on)} ${clock(r.on)}`) : "—"}</td>
+      <td class="num">${r.off ? clock(r.off) + clip(r.off_camera, r.off,
+        `${s.name} · got off ${r.bus_name} · ${day(r.off)} ${clock(r.off)}`) : "—"}</td>
       <td>${pill(r.status)}</td>
     </tr>`).join("");
 
@@ -428,6 +497,93 @@ $("search").addEventListener("focus", async () => {
   drawSearchResults();
 });
 $("search").addEventListener("blur", () => { $("search-results").hidden = true; });
+
+// ------------------------------------------------------- clip player ----
+// Asks the server for the stream around a scan (/clip/stream), waits if
+// the scan was only seconds ago, then plays it on a loop.
+
+let hls = null;          // the hls.js player, while a clip is open
+let clipTimer = null;    // countdown while waiting for footage to exist
+let clipNumber = 0;      // bumped on every open/close, so a slow answer for an
+                         // already-closed clip is ignored
+
+// The bottom-left text: only used while loading, counting down, or on an error.
+function clipStatus(text) { $("player-status").textContent = text; }
+
+async function openClip(cameraId, at, title) {
+  closeClip();
+  const mine = clipNumber;
+  $("player").hidden = false;
+  $("player-title").textContent = title;
+  $("player-command").href = `/clip?camera_id=${encodeURIComponent(cameraId)}&at=${at}`;
+  clipStatus("Loading clip…");
+
+  const r = await fetch(`/clip/stream?camera_id=${encodeURIComponent(cameraId)}&at=${at}`);
+  const body = await r.json();
+  if (mine !== clipNumber) return;              // closed (or another clip opened) meanwhile
+  if (!r.ok) { clipStatus(`Couldn't load clip: ${body.error}`); return; }
+
+  // Clicked right after the scan: the end of the clip hasn't been recorded yet.
+  let wait = body.ready_in;
+  if (wait > 0) {
+    clipStatus(`Clip ready in ${wait} s…`);
+    clipTimer = setInterval(() => {
+      wait -= 1;
+      if (wait > 0) { clipStatus(`Clip ready in ${wait} s…`); return; }
+      clearInterval(clipTimer);
+      playStream(body.url);
+    }, 1000);
+  } else {
+    playStream(body.url);
+  }
+}
+
+function playStream(url) {
+  // Opening the same clip twice gives the same URL; a throwaway "_" parameter
+  // stops the browser reusing an old copy of the playlist (and its old token).
+  url += `&_=${Date.now()}`;
+  const video = $("player-video");
+  clipStatus("");
+  if (window.Hls && Hls.isSupported()) {
+    hls = new Hls();
+    hls.on(Hls.Events.ERROR, (event, data) => {
+      if (data.fatal) {
+        clipStatus(`Playback failed (${data.details}). Try Open in Command.`);
+        console.log("hls error", data);
+      }
+    });
+    hls.loadSource(url);
+    hls.attachMedia(video);
+  } else {
+    video.src = url;   // Safari plays HLS natively
+  }
+  video.play().catch(() => {});   // muted, so autoplay is allowed
+}
+
+function closeClip() {
+  clipNumber += 1;
+  clearInterval(clipTimer);
+  if (hls) { hls.destroy(); hls = null; }
+  // Swap in a brand-new <video> element, so nothing from the last clip
+  // (buffered video, player state) carries over to the next one.
+  const old = $("player-video");
+  old.pause();
+  old.replaceWith(old.cloneNode(false));
+  clipStatus("");
+  $("player").hidden = true;
+}
+
+// Clip clicks: one handler for every clip link on every page. Runs in the
+// capture phase so the click doesn't also open the row underneath.
+document.addEventListener("click", e => {
+  const link = e.target.closest("a.clip[data-camera]");
+  if (!link) return;
+  e.preventDefault();
+  e.stopPropagation();
+  openClip(link.dataset.camera, Number(link.dataset.at), link.dataset.title);
+}, true);
+
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeClip(); });
 
 // ---------------------------------------------------- roster refresh ----
 

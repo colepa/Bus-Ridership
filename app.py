@@ -18,7 +18,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 
 HERE = Path(__file__).resolve().parent
 load_dotenv(HERE / ".env")
@@ -101,11 +101,18 @@ def add_fake_buses():
         bus = state["buses"].setdefault(door_id, new_bus(info["name"]))
         bus["name"] = info["name"]
         bus["roster"] = info["roster"]
+        bus["camera_id"] = info.get("camera_id")   # optional: borrow a real camera for demo clips
     save_state()
 
 
 def new_bus(name):
-    return {"name": name, "route": None, "taps": {}, "alerts": {}, "roster": {}}
+    return {"name": name, "route": None, "taps": {}, "alerts": {}, "roster": {}, "camera_id": None}
+
+
+def clip_camera(tap, bus):
+    """Camera for a tap's clip: the one the webhook named, else the bus's camera.
+    The fallback is what gives fake buses and made-up history clips."""
+    return tap.get("camera_id") or bus.get("camera_id")
 
 
 add_fake_buses()
@@ -149,6 +156,8 @@ def compute_manifest(bus):
             "taps": len(counted),
             "on_at": counted[0]["time"],
             "last_tap": counted[-1]["time"],
+            "on_camera": clip_camera(counted[0], bus),
+            "last_camera": clip_camera(counted[-1], bus),
             "wrong_bus": bool(bus["roster"]) and user_id not in bus["roster"],
         }
         if len(counted) % 2 == 1:
@@ -203,7 +212,9 @@ def student_rows(route, user_id):
     with nothing to do with this route gets none.
     """
     base = {"door_id": route["door_id"], "bus_name": route["bus_name"],
-            "route_started": route["started_at"], "on": None, "off": None}
+            "route_started": route["started_at"],
+            "on": None, "off": None, "on_camera": None, "off_camera": None}
+    bus = state["buses"].get(route["door_id"]) or {}
     assigned = user_id in route["roster"]
     rows = []
 
@@ -211,6 +222,8 @@ def student_rows(route, user_id):
     for i in range(0, len(taps), 2):        # pairs: (on, off)
         on = taps[i]["time"]
         off = taps[i + 1]["time"] if i + 1 < len(taps) else None
+        cameras = {"on_camera": clip_camera(taps[i], bus),
+                   "off_camera": clip_camera(taps[i + 1], bus) if off else None}
         if route["roster"] and not assigned:
             status = "wrong_bus"
         elif off is not None:
@@ -219,11 +232,12 @@ def student_rows(route, user_id):
             status = "aboard"
         else:
             status = "left_on_bus"
-        rows.append({**base, "on": on, "off": off, "status": status})
+        rows.append({**base, **cameras, "on": on, "off": off, "status": status})
 
     for alert in route["alerts"].values():
         if alert["user_id"] == user_id:
-            rows.append({**base, "on": alert["time"], "status": "rejected"})
+            rows.append({**base, "on": alert["time"], "on_camera": clip_camera(alert, bus),
+                         "status": "rejected"})
 
     if not rows and assigned:
         rows.append({**base, "status": "not_boarded" if route["ended_at"] is None else "no_show"})
@@ -269,9 +283,16 @@ async def webhook(request: Request):
         return JSONResponse({"error": "bad signature"}, status_code=403)
 
     try:
-        data = json.loads(raw).get("data") or {}
+        envelope = json.loads(raw)
     except json.JSONDecodeError:
         return JSONResponse({"error": "not json"}, status_code=400)
+    data = envelope.get("data") or {}
+
+    # The streaming API needs our org_id; the webhook is the easiest place to learn it.
+    # (fake_tap.py sends org_id None, so fake taps never overwrite it.)
+    if envelope.get("org_id") and state.get("org_id") != envelope["org_id"]:
+        state["org_id"] = envelope["org_id"]
+        save_state()
 
     # Everything we don't use gets a 200 so Verkada doesn't retry it.
     kind = data.get("notification_type")
@@ -288,6 +309,14 @@ async def webhook(request: Request):
         state["buses"][door_id] = new_bus(door_name)
         save_state()
     bus = state["buses"][door_id]
+
+    # The camera linked to this door in Command (door settings -> cameras).
+    # null until one is linked. Kept on the bus too, as the fallback for clips.
+    camera_info = (data.get("door_info") or {}).get("camera_info") or {}
+    camera_id = camera_info.get("inside_camera_id")
+    if camera_id and bus.get("camera_id") != camera_id:
+        bus["camera_id"] = camera_id
+        save_state()
 
     if not route_active(bus):
         return {"ok": True, "ignored": "no active route on this bus"}
@@ -306,6 +335,7 @@ async def webhook(request: Request):
             "name": user.get("name"),
             "card": data.get("input_value"),
             "time": tap_time,
+            "camera_id": camera_id,
         }
         save_state()
         print(f"[alert] {bus['name']}: rejected tap user_id={user.get('user_id')} time={tap_time}")
@@ -318,6 +348,7 @@ async def webhook(request: Request):
         "user_id": user["user_id"],
         "name": user.get("name") or "(no name)",
         "time": tap_time,
+        "camera_id": camera_id,
     }
     save_state()
     print(f"[tap] {bus['name']}: user_id={user['user_id']} time={tap_time}")
@@ -359,7 +390,8 @@ async def bus_manifest(door_id: str):
     on_bus, off_bus, not_boarded = compute_manifest(bus)
     # Copies with "assigned" added, so the page can say "assigned to Bus 3".
     alerts = [
-        {**a, "assigned": assigned_buses(a["user_id"]) if a["user_id"] else []}
+        {**a, "assigned": assigned_buses(a["user_id"]) if a["user_id"] else [],
+         "camera_id": clip_camera(a, bus)}
         for a in sorted(bus["alerts"].values(), key=lambda a: a["time"], reverse=True)
     ]
     return {
@@ -406,6 +438,53 @@ async def student(user_id: str):
         "now": sorted(now_rows, key=lambda r: r["status"] != "aboard"),
         "history": history,
     }
+
+
+# Clip length. Nothing is stored (footage is streamed from Verkada on each
+# click), so a longer clip only means a slightly longer wait right after a scan.
+# Verkada's stream comes in 4 s chunks, so playback can run up to ~3 s longer.
+CLIP_BEFORE = 5   # seconds of footage before the scan
+CLIP_AFTER = 5    # ...and after it. 10 s total.
+
+
+@app.get("/clip/stream")
+async def clip_stream(camera_id: str, at: int):
+    """What the player needs for the clip around a scan: the playlist to load
+    (served by /clip/playlist.m3u8 below), and `ready_in`, the seconds until the
+    end of the clip has actually happened, so a click right after a scan waits.
+    """
+    if not state.get("org_id"):
+        return JSONResponse({"error": "Don't know the org_id yet. Tap a real card once "
+                                      "so the webhook tells us."}, status_code=409)
+    end = at + CLIP_AFTER
+    # +2 s of slack for the camera to finish writing the last bit.
+    return {"url": f"/clip/playlist.m3u8?camera_id={camera_id}&at={at}",
+            "ready_in": max(0, end + 2 - int(time.time()))}
+
+
+@app.get("/clip/playlist.m3u8")
+async def clip_playlist(camera_id: str, at: int):
+    """Verkada's playlist for the clip, trimmed (see verkada_api.clip_playlist).
+    The video chunks it lists are still fetched by the browser straight from Verkada."""
+    try:
+        text = await asyncio.to_thread(verkada_api.clip_playlist, state.get("org_id"),
+                                       camera_id, at - CLIP_BEFORE, at + CLIP_AFTER)
+    except Exception as e:
+        print(f"[clip] playlist failed: {e}")
+        return JSONResponse({"error": str(e)}, status_code=502)
+    return Response(text, media_type="application/vnd.apple.mpegurl")
+
+
+@app.get("/clip")
+async def clip(camera_id: str, at: int):
+    """"Open in Command": send the browser to Command's video player at the scan.
+    Asked for only when someone clicks, so webhooks stay fast."""
+    try:
+        url = await asyncio.to_thread(verkada_api.footage_link, camera_id, at - CLIP_BEFORE)
+    except Exception as e:
+        print(f"[clip] failed: {e}")
+        return JSONResponse({"error": str(e)}, status_code=502)
+    return RedirectResponse(url)
 
 
 @app.post("/demo/history")

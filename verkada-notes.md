@@ -78,10 +78,63 @@ So `direction` is always null and on/off comes from the tap sequence:
 
 Routes are started and ended by hand with buttons on the page (MVP).
 
+## Camera
+
+`door_info.camera_info` is null until a camera is linked to the door in
+Command (door settings). Once linked (confirmed 2026-10-13 on the AC12):
+
+    {"inside_camera_id": "<uuid>", "outside_camera_id": null, "intercom_camera_id": null}
+
+We use `inside_camera_id`. The clip is pulled with the Streaming API:
+
+1. `GET /cameras/v1/footage/token` with the **API key** in `x-api-key` (not
+   the session token) → `jwt`, valid 30 min. Needs the "Streaming -
+   Live/Historical" permission on the key. **Reuse it:** there's a cap on
+   unexpired tokens (429 `"Number of active (unexpired) tokens exceeds the
+   limit"`), so a new token per clip breaks after a burst of clicks. We cache
+   one for 25 min.
+2. `GET /stream/cameras/v1/footage/stream/stream.m3u8?org_id=&camera_id=&start_time=&end_time=&jwt=&codec=&resolution=high_res&type=stream`
+   → HLS playlist. Historical window ≤ 3600 s. `org_id` comes from the
+   webhook envelope. **Don't send `codec=h264`** (confirmed 2026-10-13): it
+   works for recent footage, but once the camera files footage to its SD card
+   (a few minutes after the scan) every chunk 404s with `"Error fetching
+   historical video m4s"` (`low_res` also 404s on init.mp4). Leaving codec
+   out gives hevc, which works for old and new footage and plays in
+   Chrome/Safari on a Mac (not Firefox, not every Windows PC). This was the
+   real "works a few times, then buffers forever" bug.
+   Filed hevc footage is **encrypted**: the playlist has
+   `#EXT-X-KEY:METHOD=AES-128,URI="enc<n>.key?..."` lines with a *relative*
+   key link. It has to be made absolute like the chunk links, or the browser
+   asks localhost for the key (`keyLoadError`).
+3. The browser plays the playlist with hls.js. Footage after "now" doesn't
+   exist yet, so a clip clicked right after a scan has to wait a few seconds.
+
+**Gotcha (2026-10-13): the playlist has one chunk too many.** Chunks are 4 s,
+listed with relative links (`video.m4s?...&start_ts=<chunk start>`; the
+`start_time=-1&end_time=-1` in them is normal). Verkada adds a chunk that
+starts at/after `end_time`, and fetching it fails: 408 the first time, 404
+after. hls.js then gives up on the whole clip (it looked like "works once,
+buffers forever on reopen"). Fix: our server fetches the playlist, drops
+chunks starting at/after the clip's end, makes links absolute, and serves
+it at `/clip/playlist.m3u8`. Chunks still stream from Verkada to the browser
+(CORS is fine on success; error responses have no CORS header, so a failing
+chunk shows up in the console as a CORS error plus a 404/408).
+
+Chunk links change format as footage ages, so don't key off them:
+- minutes old: `video.m4s?...&start_ts=<chunk start>&offset=0...`
+- once the camera files it to its SD card: `video.m4s?...&ts=<chunk start>
+  &file=/mnt/internal/.../<from>-<to>.zip&prefetch=True&iv=...` (and
+  `low_res` even when we asked for `high_res`)
+The chunk start is read from each chunk's `#EXT-X-PROGRAM-DATE-TIME` line
+instead, with `start_ts`/`ts` as fallback. Terminal prints
+`[clip] dropped chunk starting ...` when it trims.
+
+Also `GET /cameras/v1/footage/link?camera_id=&timestamp=` → a Command URL that
+plays from that moment. Used for the "Open in Command" button.
+
 ## Not in the payload
 
-No GPS. No video clip reference (`door_info.camera_info` is null in every
-documented example). Both need separate Command API calls if you want them.
+No GPS. No video clip itself, only the camera id (see above).
 
 ## Endpoint requirements
 
