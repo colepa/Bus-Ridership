@@ -64,7 +64,9 @@ github.com/colepa/Bus-Ridership.
 - `app.py` — webhook, per-bus state, manifest logic, page/API endpoints
 - `verkada_api.py` — Command API calls for "Refresh roster" (doors, access
   levels, groups, users)
-- `index.html` — overview of all buses; click one for its manifest
+- `index.html` — overview of all buses; click one for its manifest. Styled
+  after Command (icon rail, pill buttons, dot+text status, "Needs attention"
+  event rows) from `mockups/manifest-mockup.html` (static, not served)
 - `fake_tap.py` — signed fake taps (`--door`, `--type`, `unknown` user)
 - `simulate.py` — plays out a route (`board` / `dropoff`) with fake taps
 - `fake_buses.json` — buses 2–4, made up, not in Command; loaded at startup

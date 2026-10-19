@@ -5,165 +5,231 @@
 <title>Student Ridership</title>
 <style>
   :root {
-    --bg: #f4f5f7; --card: #fff; --border: #e3e5e8; --text: #1d2125; --muted: #6b7280;
-    --blue: #1f5eff; --blue-soft: #e8efff;
-    --green: #1e7f4f; --green-soft: #dcf3e6;
-    --red: #c4282d; --red-soft: #fde4e4;
-    --amber: #8a5a00; --amber-soft: #fbefd0; --amber-line: #e9c46a;
-    --gray-soft: #eef0f2;
+    --bg: #f5f7f9; --panel: #fff; --border: #e6e9ec; --line: #eef0f2;
+    --text: #1f2933; --muted: #6b7684; --chip: #eef1f4; --outline: #c9cfd6;
+    --blue: #1a88e0; --blue-soft: #e7f2fc;
+    --green: #22a85a; --green-soft: #e6f6ec;
+    --red: #d93a3a; --red-soft: #fdeeee;
+    --amber: #d98a00; --amber-soft: #fdf3e1;
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text);
-         font: 14px/1.4 Inter, -apple-system, "Segoe UI", system-ui, sans-serif; }
+  body { margin: 0; background: var(--bg); color: var(--text); display: flex; min-height: 100vh;
+         font: 15px/1.4 "Open Sans", -apple-system, "Segoe UI", system-ui, sans-serif; }
   a { color: inherit; text-decoration: none; }
-  h1 { font-size: 20px; font-weight: 600; margin: 0 0 16px; }
-  h2 { font-size: 13px; font-weight: 600; margin: 0; }
-
-  /* top bar + sidebar */
-  .topbar { height: 56px; background: var(--card); border-bottom: 1px solid var(--border);
-            display: flex; align-items: center; gap: 16px; padding: 0 20px;
-            position: sticky; top: 0; z-index: 10; }
-  .brand { font-weight: 600; font-size: 15px; width: 196px; display: flex; align-items: center; gap: 10px; }
-  .brand-mark { width: 26px; height: 26px; border-radius: 6px; background: var(--text); color: #fff;
-                display: grid; place-items: center; font-size: 13px; }
-  .search { position: relative; flex: 1; max-width: 480px; }
-  .search input { width: 100%; height: 36px; border: 1px solid var(--border); border-radius: 8px;
-                  padding: 0 12px 0 34px; font: inherit; background: var(--bg); outline: none; }
-  .search input:focus { border-color: var(--blue); background: #fff; }
-  .search::before { content: "⌕"; position: absolute; left: 12px; top: 7px; color: var(--muted); font-size: 16px; }
-  .dropdown { position: absolute; top: 42px; left: 0; right: 0; background: #fff; border: 1px solid var(--border);
-              border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.08); overflow: hidden; }
-  .dropdown a { display: flex; align-items: center; gap: 10px; padding: 8px 12px; }
-  .dropdown a:hover, .dropdown a.active { background: var(--blue-soft); }
-  .dropdown .empty { padding: 12px; color: var(--muted); }
-  .topbar .spacer { flex: 1; }
-  .layout { display: flex; }
-  .sidebar { width: 216px; padding: 16px 12px; position: sticky; top: 56px; height: calc(100vh - 56px);
-             border-right: 1px solid var(--border); background: var(--card); }
-  .sidebar a { display: block; padding: 8px 12px; border-radius: 6px; margin-bottom: 2px; color: var(--muted); font-weight: 500; }
-  .sidebar a:hover { background: var(--gray-soft); }
-  .sidebar a.active { background: var(--blue-soft); color: var(--blue); }
-  main { flex: 1; padding: 24px 32px; max-width: 1100px; }
-
-  /* building blocks */
-  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 16px; }
-  .card-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px;
-               border-bottom: 1px solid var(--border); }
-  .card-head .hint { color: var(--muted); font-size: 12px; }
-  .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
-  .tile { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; }
-  .tile-label { color: var(--muted); font-size: 13px; }
-  .tile-value { font-size: 26px; font-weight: 600; margin-top: 2px; }
-  .tile.red .tile-label, .tile.red .tile-value { color: var(--red); }
-  .pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 500; white-space: nowrap; }
-  .pill.green { background: var(--green-soft); color: var(--green); }
-  .pill.red { background: var(--red-soft); color: var(--red); }
-  .pill.amber { background: var(--amber-soft); color: var(--amber); border: 1px solid var(--amber-line); }
-  .pill.gray { background: var(--gray-soft); color: var(--muted); }
-  .pill.blue { background: var(--blue-soft); color: var(--blue); }
-  .btn { height: 34px; padding: 0 14px; border-radius: 8px; border: 1px solid var(--border); background: #fff;
-         font: inherit; font-weight: 500; cursor: pointer; }
-  .btn:hover { background: var(--gray-soft); }
-  .btn.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
-  .btn.primary:hover { filter: brightness(.95); }
+  svg { flex: none; }
+  button { font: inherit; color: inherit; cursor: pointer; }
   .muted { color: var(--muted); }
-  .avatar { width: 34px; height: 34px; border-radius: 50%; background: var(--gray-soft); color: var(--muted);
-            display: grid; place-items: center; font-size: 12px; font-weight: 600; flex: none; }
-  .avatar.big { width: 48px; height: 48px; font-size: 16px; }
-  .bus-badge { width: 40px; height: 40px; border-radius: 8px; background: var(--blue-soft); color: var(--blue);
-               display: grid; place-items: center; font-weight: 600; font-size: 16px; flex: none; }
-  .bus-badge.small { width: 30px; height: 30px; font-size: 13px; border-radius: 6px; }
+  .spacer { flex: 1; }
+  .divider { width: 1px; height: 24px; background: var(--border); flex: none; }
+  .num { font-variant-numeric: tabular-nums; }
 
-  /* header card on bus / student pages */
-  .header { display: flex; align-items: center; gap: 14px; padding: 16px; }
-  .header .title { font-size: 17px; font-weight: 600; }
-  .header .actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
-  .back { display: inline-block; color: var(--muted); margin-bottom: 12px; }
-  .back:hover { color: var(--text); }
+  /* left icon rail */
+  .rail { width: 76px; flex: none; background: var(--panel); border-right: 1px solid var(--border);
+          display: flex; flex-direction: column; align-items: center; gap: 14px; padding-top: 88px;
+          position: sticky; top: 0; height: 100vh; }
+  .rail a { width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; color: #3c4650; }
+  .rail a:hover { background: var(--chip); }
+  .rail a.active { background: var(--blue); color: #fff; }
 
-  /* alert banners */
-  .banner { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 8px; margin: 0 0 8px;
-            background: var(--amber-soft); border: 1px solid var(--amber-line); color: var(--amber); }
-  .banner.red { background: var(--red-soft); border-color: #f3b5b5; color: var(--red); }
-  .banner a { text-decoration: underline; }
+  .content { flex: 1; min-width: 0; padding: 20px 32px 40px; max-width: 1280px; }
 
-  /* people rows */
-  .section-label { padding: 10px 16px 6px; font-size: 12px; font-weight: 600; color: var(--muted);
-                   text-transform: uppercase; letter-spacing: .03em; background: #fafbfc; border-bottom: 1px solid var(--border); }
-  .row { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--border);
-         cursor: pointer; }
-  .row:last-child { border-bottom: 0; }
-  .row:hover { background: #f8f9fb; }
-  .row.flagged { background: #fdf6e3; }
-  .row .main { flex: 1; min-width: 0; }
-  .row .name { font-weight: 500; }
-  .row .sub { color: var(--muted); font-size: 12px; }
+  /* page title row: title | tabs ......... search  refresh */
+  .page-head { display: flex; align-items: center; gap: 20px; margin-bottom: 20px; min-height: 48px; }
+  .page-head h1 { font-size: 26px; font-weight: 700; margin: 0; white-space: nowrap; }
+  .tabs { display: flex; gap: 28px; align-self: stretch; }
+  .tabs a { display: flex; align-items: center; color: var(--muted); font-weight: 500;
+            border-bottom: 3px solid transparent; padding-top: 3px; }
+  .tabs a:hover { color: var(--text); }
+  .tabs a.active { color: var(--text); font-weight: 600; border-color: var(--text); }
+  .search { position: relative; display: flex; align-items: center; gap: 10px; width: 320px; height: 44px;
+            padding: 0 18px; background: var(--chip); border-radius: 999px; color: var(--muted); }
+  .search input { border: 0; background: none; outline: none; font: inherit; color: var(--text); flex: 1; min-width: 0; }
+  .search:focus-within { background: #fff; box-shadow: 0 0 0 1px var(--blue); }
+  .dropdown { position: absolute; top: 52px; left: 0; right: 0; z-index: 20; background: var(--panel);
+              border-radius: 12px; box-shadow: 0 8px 28px rgba(0,0,0,.12); overflow: hidden; padding: 6px 0; }
+  .dropdown a { display: flex; align-items: center; gap: 12px; padding: 8px 16px; color: var(--text); }
+  .dropdown a:hover, .dropdown a.active { background: var(--blue-soft); }
+  .dropdown .empty { padding: 12px 16px; }
+  .sub { color: var(--muted); font-size: 14px; }
 
-  /* tables */
+  /* buttons */
+  .pill-btn { display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 20px; white-space: nowrap;
+              background: var(--panel); border: 1px solid var(--outline); border-radius: 999px; font-weight: 500; }
+  .pill-btn:hover { background: var(--chip); }
+  .pill-btn.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+  .pill-btn.primary:hover { filter: brightness(.95); }
+  .pill-btn.small { height: 34px; padding: 0 14px; font-size: 14px; }
+  .round-btn { width: 48px; height: 48px; border-radius: 50%; border: 1px solid var(--outline);
+               background: var(--panel); display: grid; place-items: center; flex: none; }
+  .round-btn:hover { background: var(--chip); }
+
+  /* panels and cards */
+  .panel { background: var(--panel); border-radius: 12px; margin-bottom: 16px; }
+  .panel-head { display: flex; align-items: center; gap: 10px; padding: 18px 24px 10px; }
+  .panel-head h2 { font-size: 17px; font-weight: 600; margin: 0; }
+  .panel-head .hint { margin-left: auto; font-size: 14px; color: var(--muted); }
+  .count { background: var(--chip); color: var(--muted); border-radius: 999px; padding: 1px 10px;
+           font-size: 13px; font-weight: 600; }
+  .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 16px; }
+  .card { background: var(--panel); border-radius: 12px; padding: 18px 24px; }
+  .card-label { font-size: 14px; color: var(--muted); }
+  .card-value { font-size: 24px; font-weight: 600; margin-top: 4px; }
+  .card.red .card-value { color: var(--red); }
+  .empty-state { padding: 32px 24px; text-align: center; color: var(--muted); }
+
+  /* header panel on bus and student pages */
+  .head-panel { display: flex; align-items: center; gap: 18px; padding: 20px 24px; }
+  .head-text { flex: 1; min-width: 0; }
+  .head-title { font-size: 21px; font-weight: 600; }
+  .status-line { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 14px; margin-top: 4px;
+                 font-size: 14px; font-weight: 500; }
+  .status-line .divider { height: 16px; }
+  .head-actions { margin-left: auto; display: flex; gap: 10px; align-items: center; }
+  .bus-badge { width: 60px; height: 60px; border-radius: 8px; background: var(--blue-soft); color: var(--blue);
+               display: grid; place-items: center; font-size: 24px; font-weight: 700; flex: none; }
+  .bus-badge.small { width: 36px; height: 36px; font-size: 15px; border-radius: 6px; }
+
+  /* status = colored dot + text, like Command's "● Online" */
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; flex: none; }
+  .dot.green { background: var(--green); } .dot.red { background: var(--red); }
+  .dot.amber { background: var(--amber); } .dot.gray { background: #b4bcc5; }
+  .status { display: inline-flex; align-items: center; font-size: 14px; font-weight: 500; white-space: nowrap; }
+
+  /* avatars */
+  .avatar { width: 44px; height: 44px; border-radius: 50%; background: #e4e8ec; color: #4a5560;
+            display: grid; place-items: center; font-size: 15px; font-weight: 600; flex: none; }
+  .avatar.small { width: 34px; height: 34px; font-size: 13px; }
+  .avatar.big { width: 60px; height: 60px; font-size: 20px; }
+
+  /* "Needs attention": rows styled like Command event cards */
+  .event { display: flex; align-items: center; gap: 16px; padding: 14px 24px; }
+  .event + .event { border-top: 1px solid var(--line); }
+  .event-icon { width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; flex: none; }
+  .event-icon.red { background: var(--red-soft); color: var(--red); }
+  .event-icon.amber { background: var(--amber-soft); color: var(--amber); }
+  .event-icon.green { background: var(--green-soft); color: var(--green); }
+  .event-title { font-weight: 600; }
+  .event-title.red { color: var(--red); } .event-title.amber { color: var(--amber); }
+  .event-title.green { color: var(--green); }
+  .event-body { flex: 1; min-width: 0; }
+  .event-time { color: var(--muted); font-size: 14px; margin-right: 8px; white-space: nowrap; }
+  .event a.name { font-weight: 600; }
+  .event a.name:hover { color: var(--blue); }
+
+  /* passenger list: rows like Command's door and user lists */
+  .group { display: flex; align-items: center; gap: 8px; padding: 18px 24px 6px; color: var(--muted);
+           font-size: 14px; font-weight: 500; list-style: none; }
+  details > summary.group { cursor: pointer; }
+  details > summary::-webkit-details-marker { display: none; }
+  .chev { transition: transform .15s; }
+  details[open] .chev { transform: rotate(90deg); }
+  .row { display: flex; align-items: center; padding: 0 24px 0 48px; cursor: pointer; }
+  .row:hover { background: #f8fafb; }
+  .row.flagged { background: #fffaf0; }
+  .row-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 16px; padding: 12px 0;
+              border-bottom: 1px solid var(--line); }
+  .row .who { flex: 1; min-width: 0; }
+  .row .status { width: 170px; }
+
+  /* tables (bus overview, students, ride history) */
   table { width: 100%; border-collapse: collapse; }
-  th { text-align: left; font-size: 12px; font-weight: 600; color: var(--muted); padding: 10px 16px;
-       border-bottom: 1px solid var(--border); background: #fafbfc; }
-  td { padding: 10px 16px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  th { text-align: left; font-size: 14px; font-weight: 600; color: var(--muted); padding: 14px 24px;
+       background: #f8f9fb; border-bottom: 1px solid var(--line); }
+  td { padding: 12px 24px; border-bottom: 1px solid var(--line); white-space: nowrap; }
   tr:last-child td { border-bottom: 0; }
   tr.link { cursor: pointer; }
-  tr.link:hover td { background: #f8f9fb; }
-  td .cell { display: flex; align-items: center; gap: 10px; }
-  .num { font-variant-numeric: tabular-nums; }
+  tr.link:hover td { background: #f8fafb; }
+  td .cell { display: flex; align-items: center; gap: 14px; }
+  td .strong { font-weight: 600; }
   .red-text { color: var(--red); font-weight: 600; }
-  .empty-state { padding: 32px; text-align: center; color: var(--muted); }
-  td .cell { white-space: nowrap; }
 
-  /* clip icons */
-  .clip { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 6px;
-          color: var(--muted); vertical-align: middle; }
+  /* camera clip buttons */
+  .clip { width: 38px; height: 38px; border-radius: 50%; color: #3c4650; flex: none;
+          display: inline-grid; place-items: center; vertical-align: middle; }
   a.clip:hover { background: var(--blue-soft); color: var(--blue); }
-  .clip.none { opacity: .35; }
-  td .clip { width: 24px; height: 24px; margin-left: 4px; }
-  .banner .clip { color: inherit; margin-left: auto; width: auto; padding: 0 8px; gap: 4px;
-                  grid-auto-flow: column; text-decoration: none; }
+  .clip.none { opacity: .3; }
+  td .clip { width: 32px; height: 32px; margin-left: 4px; }
 
   /* clip player pop-up */
   .overlay { position: fixed; inset: 0; background: rgba(15, 20, 30, .55); z-index: 50;
              display: grid; place-items: center; padding: 24px; }
   .overlay[hidden] { display: none; }
-  .player-card { background: var(--card); border-radius: 12px; width: min(820px, 100%); overflow: hidden;
+  .player-card { background: var(--panel); border-radius: 12px; width: min(840px, 100%); overflow: hidden;
                  box-shadow: 0 20px 60px rgba(0,0,0,.3); }
+  .player-card .panel-head { padding: 14px 16px 14px 24px; }
+  .player-card .round-btn { width: 38px; height: 38px; margin-left: auto; }
   .player-card video { display: block; width: 100%; aspect-ratio: 16 / 9; background: #000; }
-  .player-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; }
-  .player-foot .btn { display: inline-flex; align-items: center; }
+  .player-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 24px; }
 
-  /* narrow windows (laptop split screen, tablet): sidebar becomes a top strip */
-  @media (max-width: 900px) {
-    .brand { width: auto; }
-    .layout { flex-direction: column; }
-    .sidebar { width: auto; height: auto; position: static; display: flex; gap: 4px;
-               border-right: 0; border-bottom: 1px solid var(--border); padding: 8px 12px; }
-    main { padding: 16px; }
-    .tiles { grid-template-columns: repeat(2, 1fr); }
-    .card { overflow-x: auto; }
-    .header { flex-wrap: wrap; }
-    .header .actions { margin-left: 0; width: 100%; flex-wrap: wrap; }
+  /* narrow windows (laptop split screen, tablet) */
+  @media (max-width: 1000px) {
+    .content { padding: 16px; }
+    .page-head { flex-wrap: wrap; }
+    .search { width: 100%; order: 5; }
+    .cards { grid-template-columns: repeat(2, 1fr); }
+    .panel { overflow-x: auto; }
+    .head-panel { flex-wrap: wrap; }
+    .head-actions { margin-left: 0; width: 100%; }
+    .row { padding-left: 24px; }
+    .row .status { width: auto; }
   }
 </style>
 </head>
 <body>
 
-<header class="topbar">
-  <div class="brand"><span class="brand-mark">▣</span>Student Ridership</div>
-  <div class="search">
-    <input id="search" placeholder="Search students" autocomplete="off">
-    <div id="search-results" class="dropdown" hidden></div>
-  </div>
-  <div class="spacer"></div>
-  <span id="roster-status" class="muted"></span>
-  <button class="btn" onclick="refreshRoster()">Refresh roster</button>
-</header>
+<!-- Icons, defined once. Used as icon("bus") etc. -->
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="i-bus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="4" y="3" width="16" height="15" rx="3"/><path d="M4 11h16M8 21v-3M16 21v-3"/><circle cx="8" cy="14.5" r=".8"/><circle cx="16" cy="14.5" r=".8"/></symbol>
+  <symbol id="i-people" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.5 3.4-5.5 6.5-5.5s5.7 2 6.5 5.5"/><path d="M15.5 4.8a3.3 3.3 0 0 1 0 6.4M18 14.8c1.8.7 3 2.5 3.5 5.2"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+    <circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M20 11a8 8 0 0 0-14.8-3.5M4 4v4h4M4 13a8 8 0 0 0 14.8 3.5M20 20v-4h-4"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M14.5 6l-6 6 6 6"/></symbol>
+  <symbol id="i-camera" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="2.5" y="6" width="13.5" height="12" rx="2"/><path d="M16 10.5l5.5-3v9l-5.5-3z"/></symbol>
+  <symbol id="i-nocamera" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="2.5" y="6" width="13.5" height="12" rx="2"/><path d="M16 10.5l5.5-3v9l-5.5-3z"/><path d="M3 3l18 18"/></symbol>
+  <symbol id="i-warn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 3.5l9.5 16.5h-19z"/><path d="M12 10v4.5M12 17.3v.1"/></symbol>
+  <symbol id="i-card" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="3" y="5.5" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h4"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M9.5 6l6 6-6 6"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+    <path d="M6 6l12 12M18 6L6 18"/></symbol>
+</svg>
 
-<div class="layout">
-  <nav class="sidebar">
-    <a href="#" id="nav-buses">Buses</a>
-    <a href="#students" id="nav-students">Students</a>
-  </nav>
+<nav class="rail">
+  <a href="#" id="rail-buses" title="Buses"><svg width="24" height="24"><use href="#i-bus"/></svg></a>
+  <a href="#students" id="rail-students" title="Students"><svg width="24" height="24"><use href="#i-people"/></svg></a>
+</nav>
+
+<div class="content">
+  <!-- Stays put on every page (so the search box keeps focus while pages redraw). -->
+  <header class="page-head">
+    <h1>Student Ridership</h1>
+    <span class="divider"></span>
+    <nav class="tabs">
+      <a href="#" id="tab-buses">Buses</a>
+      <a href="#students" id="tab-students">Students</a>
+    </nav>
+    <span class="spacer"></span>
+    <label class="search">
+      <svg width="20" height="20"><use href="#i-search"/></svg>
+      <input id="search" placeholder="Search students..." autocomplete="off">
+      <div id="search-results" class="dropdown" hidden></div>
+    </label>
+    <span id="roster-status" class="sub"></span>
+    <button class="pill-btn" onclick="refreshRoster()">
+      <svg width="18" height="18"><use href="#i-refresh"/></svg>Refresh roster</button>
+  </header>
+
   <!-- Each page is drawn into #page by one of the show... functions below. -->
   <main id="page"></main>
 </div>
@@ -171,14 +237,15 @@
 <!-- Clip player: footage around a scan. Opened by openClip(). -->
 <div id="player" class="overlay" hidden onclick="if (event.target === this) closeClip()">
   <div class="player-card">
-    <div class="card-head">
+    <div class="panel-head">
       <h2 id="player-title"></h2>
-      <button class="btn" onclick="closeClip()">Close</button>
+      <button class="round-btn" title="Close" onclick="closeClip()">
+        <svg width="18" height="18"><use href="#i-close"/></svg></button>
     </div>
     <video id="player-video" muted loop playsinline controls></video>
     <div class="player-foot">
-      <span id="player-status" class="muted"></span>
-      <a id="player-command" class="btn" target="_blank">Open in Command ↗</a>
+      <span id="player-status" class="sub"></span>
+      <a id="player-command" class="pill-btn small" target="_blank">Open in Command ↗</a>
     </div>
   </div>
 </div>
@@ -199,13 +266,21 @@ function esc(s) {
 function clock(t) { return new Date(t * 1000).toLocaleTimeString([], {hour: "numeric", minute: "2-digit"}); }
 function day(t) { return new Date(t * 1000).toLocaleDateString([], {weekday: "short", month: "short", day: "numeric"}); }
 function amPm(t) { return new Date(t * 1000).getHours() < 12 ? "AM" : "PM"; }
+function ago(t) {
+  const s = Math.max(0, Math.floor(Date.now() / 1000 - t));
+  if (s < 60) return "just now";
+  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
+  return day(t);
+}
 function initials(name) {
   return String(name).split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join("");
 }
 function busNumber(name) { const m = String(name).match(/\d+/); return m ? m[0] : String(name)[0]; }
 async function getJSON(url) { const r = await fetch(url); return r.ok ? r.json() : null; }
+function icon(name, size = 20) { return `<svg width="${size}" height="${size}"><use href="#i-${name}"/></svg>`; }
 
-// status -> [label, color]. Same names the server uses.
+// status -> [label, dot color]. Same names the server uses.
 const STATUS = {
   aboard:      ["Aboard", "green"],
   dropped_off: ["Dropped off", "gray"],
@@ -217,46 +292,61 @@ const STATUS = {
 };
 const FLAGGED = ["left_on_bus", "wrong_bus", "rejected"];
 
-function pill(status) {
-  const [label, color] = STATUS[status];
-  return `<span class="pill ${color}">${label}</span>`;
+function status(name) {
+  const [label, color] = STATUS[name];
+  return `<span class="status"><span class="dot ${color}"></span>${label}</span>`;
 }
-function routePill(route) {
-  if (!route) return `<span class="pill gray">No route yet</span>`;
-  if (route.ended_at !== null) return `<span class="pill gray">Route ended ${clock(route.ended_at)}</span>`;
-  return `<span class="pill green">En route · since ${clock(route.started_at)}</span>`;
+// "● En route since 3:05 PM" / "● Route ended 4:02 PM" / "● No route yet"
+function routeStatus(route) {
+  if (!route) return `<span class="status muted"><span class="dot gray"></span>No route yet</span>`;
+  if (route.ended_at !== null) return `<span class="status"><span class="dot gray"></span>Route ended ${clock(route.ended_at)}</span>`;
+  return `<span class="status"><span class="dot green"></span>En route since ${clock(route.started_at)}</span>`;
 }
-function tile(label, value, redIfAny) {
+function card(label, value, redIfAny) {
   const red = redIfAny && value > 0 ? "red" : "";
-  return `<div class="tile ${red}"><div class="tile-label">${label}</div><div class="tile-value num">${value}</div></div>`;
+  return `<div class="card ${red}"><div class="card-label">${label}</div><div class="card-value num">${value}</div></div>`;
 }
-// Clip icon: opens Command's player at the scan (via /clip). Greyed out, crossed
-// camera when there's no camera for that bus or no scan to show.
-const CAMERA_SVG = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-  stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-  <rect x="2" y="6" width="14" height="12" rx="2"/><path d="M16 10l6-3v10l-6-3z"/></svg>`;
-const NO_CAMERA_SVG = CAMERA_SVG.replace("</svg>", `<path d="M3 3l18 18"/></svg>`);
+function backButton(hash, title) {
+  return `<a class="round-btn" href="${hash}" title="${title}">${icon("back", 22)}</a>`;
+}
 
+// Clip icon: opens the clip player at the scan. Crossed-out camera when
+// there's no camera for that bus.
 function clip(cameraId, time, title) {
-  if (!cameraId || !time) {
-    return `<span class="clip none" title="No clip">${NO_CAMERA_SVG}</span>`;
-  }
-  return clipLink(cameraId, time, title, CAMERA_SVG);
+  if (!cameraId || !time) return `<span class="clip none" title="No clip">${icon("nocamera")}</span>`;
+  return clipLink(cameraId, time, title, icon("camera"));
 }
-
 // A link that opens the clip player. The click is handled once, below
 // ("clip clicks"), using these data- attributes.
-function clipLink(cameraId, time, title, inner) {
-  return `<a class="clip" href="#" title="Play clip" data-camera="${esc(cameraId)}"
+function clipLink(cameraId, time, title, inner, cls = "clip") {
+  return `<a class="${cls}" href="#" title="Play clip" data-camera="${esc(cameraId)}"
              data-at="${time}" data-title="${esc(title)}">${inner}</a>`;
 }
 
-function personRow(userId, name, sub, status, clipHtml) {
-  const flagged = FLAGGED.includes(status) ? "flagged" : "";
+// One student row in the passenger list.
+function personRow(userId, name, sub, statusName, clipHtml) {
+  const flagged = FLAGGED.includes(statusName) ? "flagged" : "";
   return `<div class="row ${flagged}" onclick="location.hash='student/${encodeURIComponent(userId)}'">
-    <div class="avatar">${esc(initials(name))}</div>
-    <div class="main"><div class="name">${esc(name)}</div><div class="sub">${sub}</div></div>
-    ${pill(status)}${clipHtml}</div>`;
+    <div class="row-main">
+      <div class="avatar">${esc(initials(name))}</div>
+      <div class="who"><div>${esc(name)}</div><div class="sub">${sub}</div></div>
+      ${status(statusName)}${clipHtml}
+    </div></div>`;
+}
+
+// One row in "Needs attention". color: "red" / "amber" / "green".
+function eventRow(color, iconName, title, text, time, clipHtml) {
+  return `<div class="event">
+    <div class="event-icon ${color}">${icon(iconName, 22)}</div>
+    <div class="event-body"><div class="event-title ${color}">${title}</div><div>${text}</div></div>
+    ${time ? `<span class="event-time">${clock(time)}</span>` : ""}${clipHtml}
+  </div>`;
+}
+function viewClip(cameraId, time, title) {
+  return cameraId ? clipLink(cameraId, time, title, `${icon("camera", 18)}View clip`, "pill-btn small") : "";
+}
+function studentLink(userId, name) {
+  return `<a class="name" href="#student/${encodeURIComponent(userId)}">${esc(name)}</a>`;
 }
 
 // ------------------------------------------------------- page: buses ----
@@ -268,104 +358,140 @@ async function showOverview() {
 
   const rows = buses.map(b => `
     <tr class="link" onclick="location.hash='bus/${encodeURIComponent(b.door_id)}'">
-      <td><div class="cell"><span class="bus-badge small">${esc(busNumber(b.name))}</span>${esc(b.name)}</div></td>
-      <td>${routePill(b.route)}</td>
+      <td><div class="cell"><span class="bus-badge small">${esc(busNumber(b.name))}</span>
+        <div><div class="strong">${esc(b.name)}</div>${routeStatus(b.route)}</div></div></td>
       <td class="num">${b.on_bus}</td>
-      <td class="num">${b.roster}</td>
-      <td class="num">${b.off_bus}</td>
       <td class="num ${b.not_boarded && b.route ? "red-text" : ""}">${b.not_boarded}</td>
+      <td class="num">${b.off_bus}</td>
+      <td class="num">${b.roster}</td>
       <td class="num ${b.flags ? "red-text" : ""}">${b.flags}</td>
     </tr>`).join("");
 
   $("page").innerHTML = `
-    <h1>Buses</h1>
-    <div class="tiles">
-      ${tile("Buses en route", enRoute)}
-      ${tile("Students aboard", total("on_bus"))}
-      ${tile("Dropped off", total("off_bus"))}
-      ${tile("Flags open", total("flags"), true)}
+    <div class="cards">
+      ${card("Buses en route", enRoute)}
+      ${card("Students aboard", total("on_bus"))}
+      ${card("Dropped off", total("off_bus"))}
+      ${card("Needs attention", total("flags"), true)}
     </div>
-    <div class="card">
+    <section class="panel">
+      <div class="panel-head"><h2>Buses</h2><span class="count">${buses.length}</span>
+        <span class="hint">Click a bus for its live passenger list</span></div>
       ${buses.length ? `<table>
-        <thead><tr><th>Bus</th><th>Status</th><th>Aboard</th><th>On roster</th>
-                   <th>Dropped off</th><th>Not boarded</th><th>Flags</th></tr></thead>
+        <thead><tr><th>Bus</th><th>Aboard</th><th>Not boarded</th><th>Dropped off</th>
+                   <th>On roster</th><th>Needs attention</th></tr></thead>
         <tbody>${rows}</tbody></table>`
       : `<div class="empty-state">No buses yet. Press Refresh roster, or tap a card on any reader.</div>`}
-    </div>`;
+    </section>`;
 }
 
 // --------------------------------------------------------- page: bus ----
 
+let droppedOpen = false;   // is the "Dropped off" group expanded? (kept across redraws)
+
 async function showBus(doorId) {
   const m = await getJSON(`/bus/${encodeURIComponent(doorId)}`);
   if (!m) { location.hash = ""; return; }
+  const enRoute = m.route && m.route.ended_at === null;
   const ended = m.route && m.route.ended_at !== null;
 
-  // One list of everyone, sorted into sections.
-  const attention = [], aboard = [], waiting = [], off = [];
+  // Passenger rows, by group, plus the problems for "Needs attention".
+  // The problems match the server's flag count: rejected scans, wrong-bus
+  // riders, and (after the route ends) anyone who never tapped off.
+  const problems = [], aboard = [], waiting = [], off = [];
   for (const s of m.on_bus) {
-    const status = s.wrong_bus ? "wrong_bus" : ended ? "left_on_bus" : "aboard";
+    const st = s.wrong_bus ? "wrong_bus" : ended ? "left_on_bus" : "aboard";
+    const title = `${s.name} · boarded ${m.name} · ${clock(s.on_at)}`;
     const sub = `On at ${clock(s.on_at)}` + (s.wrong_bus ? " · not on this bus's roster" : "");
-    const icon = clip(s.on_camera, s.on_at, `${s.name} · boarded ${m.name} · ${clock(s.on_at)}`);
-    (status === "aboard" ? aboard : attention).push(personRow(s.user_id, s.name, sub, status, icon));
+    aboard.push(personRow(s.user_id, s.name, sub, st, clip(s.on_camera, s.on_at, title)));
+    if (s.wrong_bus) {
+      problems.push(eventRow("red", "warn", "Wrong bus",
+        `${studentLink(s.user_id, s.name)} <span class="muted">${ended ? "was still aboard at the end, and is" : "is aboard but"} not on this bus's roster</span>`,
+        s.on_at, viewClip(s.on_camera, s.on_at, title)));
+    } else if (ended) {
+      problems.push(eventRow("red", "warn", "Never tapped off",
+        `${studentLink(s.user_id, s.name)} <span class="muted">was still on the bus when the route ended. Check the bus.</span>`,
+        s.on_at, viewClip(s.on_camera, s.on_at, title)));
+    }
   }
   for (const s of m.off_bus) {
-    const status = s.wrong_bus ? "wrong_bus" : "dropped_off";
-    const sub = `On at ${clock(s.on_at)} · off at ${clock(s.last_tap)}`;
-    const icon = clip(s.last_camera, s.last_tap, `${s.name} · got off ${m.name} · ${clock(s.last_tap)}`);
-    (status === "wrong_bus" ? attention : off).push(personRow(s.user_id, s.name, sub, status, icon));
+    const title = `${s.name} · got off ${m.name} · ${clock(s.last_tap)}`;
+    off.push(personRow(s.user_id, s.name, `On at ${clock(s.on_at)} · off at ${clock(s.last_tap)}`,
+      s.wrong_bus ? "wrong_bus" : "dropped_off", clip(s.last_camera, s.last_tap, title)));
+    if (s.wrong_bus) {
+      problems.push(eventRow("red", "warn", "Wrong bus",
+        `${studentLink(s.user_id, s.name)} <span class="muted">rode this bus but is not on its roster</span>`,
+        s.on_at, viewClip(s.on_camera, s.on_at, `${s.name} · boarded ${m.name} · ${clock(s.on_at)}`)));
+    }
   }
   for (const s of m.not_boarded) {
-    const status = ended ? "no_show" : "not_boarded";
-    const sub = m.route ? "Expected · no scan recorded" : "On this bus's roster";
-    waiting.push(personRow(s.user_id, s.name, sub, status, ended ? clip(null) : ""));
+    waiting.push(personRow(s.user_id, s.name, m.route ? "No scan recorded" : "On this bus's roster",
+      ended ? "no_show" : "not_boarded", `<span class="clip"></span>`));
   }
-  const section = (label, rows) => rows.length
-    ? `<div class="section-label">${label} · ${rows.length}</div>${rows.join("")}` : "";
-
-  // Rejected scans as banners at the top.
-  const banners = m.alerts.map(a => {
-    const who = a.user_id ? a.name : `Unrecognized card ${a.card}`;
-    const view = a.camera_id
-      ? clipLink(a.camera_id, a.time, `${who} · rejected at ${m.name} · ${clock(a.time)}`,
-                 `${CAMERA_SVG} View clip`) : "";
-    if (!a.user_id) {
-      return `<div class="banner">⚠ Unrecognized card ${esc(a.card)} scanned at ${clock(a.time)}${view}</div>`;
+  // Rejected scans (newest first from the server).
+  for (const a of m.alerts) {
+    const who = a.user_id ? a.name : `Card ${a.card}`;
+    const clipBtn = viewClip(a.camera_id, a.time, `${who} · rejected at ${m.name} · ${clock(a.time)}`);
+    if (a.user_id) {
+      const where = a.assigned.length ? `assigned to ${esc(a.assigned.join(", "))}` : "not assigned to any bus";
+      problems.push(eventRow("amber", "card", "Card rejected",
+        `${studentLink(a.user_id, a.name)} <span class="muted">scanned here, ${where}</span>`, a.time, clipBtn));
+    } else {
+      problems.push(eventRow("amber", "card", "Unrecognized card",
+        `<b>Card ${esc(a.card)}</b> <span class="muted">is not linked to any student</span>`, a.time, clipBtn));
     }
-    const where = a.assigned.length ? `assigned ${esc(a.assigned.join(", "))}` : "not assigned to any bus";
-    return `<div class="banner">⚠ Wrong bus: <a href="#student/${encodeURIComponent(a.user_id)}">${esc(a.name)}</a>
-            (${where}) scanned at ${clock(a.time)} · card rejected${view}</div>`;
-  }).join("");
-  const leftOn = ended && attention.length
-    ? `<div class="banner red">⚠ Route ended with students who never tapped off. Check the bus.</div>` : "";
+  }
+
+  // Most recent scan of any kind, so a stale count is never mistaken for "all clear".
+  const times = [...m.on_bus.map(s => s.last_tap), ...m.off_bus.map(s => s.last_tap), ...m.alerts.map(a => a.time)];
+  const lastScan = times.length ? `Last scan ${ago(Math.max(...times))}` : "No scans yet";
+
+  const attention = !m.route ? "" : `
+    <section class="panel">
+      <div class="panel-head"><h2>Needs attention</h2><span class="count">${problems.length}</span></div>
+      ${problems.length ? problems.join("")
+        : eventRow("green", "check", "All clear", `<span class="muted">No problems on this route.</span>`, null, "")}
+    </section>`;
+
+  const group = (iconName, label, rows) => rows.length
+    ? `<div class="group">${icon(iconName, 16)}${label} · ${rows.length}</div>${rows.join("")}` : "";
 
   $("page").innerHTML = `
-    <a class="back" href="#">← All buses</a>
-    <div class="card"><div class="header">
-      <span class="bus-badge">${esc(busNumber(m.name))}</span>
-      <div><div class="title">${esc(m.name)}</div><div class="muted">${m.roster.length} students on roster</div></div>
-      <div class="actions">
-        ${routePill(m.route)}
-        <button class="btn primary" onclick="routeAction('start')">Start route</button>
-        <button class="btn" onclick="routeAction('end')">End route</button>
+    <section class="panel head-panel">
+      ${backButton("#", "All buses")}
+      <div class="bus-badge">${esc(busNumber(m.name))}</div>
+      <div class="head-text">
+        <div class="head-title">${esc(m.name)}</div>
+        <div class="status-line">
+          ${routeStatus(m.route)}
+          ${m.route ? `<span class="divider"></span><span class="muted">${lastScan}</span>` : ""}
+          <span class="divider"></span><span class="muted">${m.roster.length} on roster</span>
+        </div>
       </div>
-    </div></div>
-    <div class="tiles">
-      ${tile(ended ? "Left on bus" : "Aboard now", m.on_bus.length, ended)}
-      ${tile("Expected on roster", m.roster.length)}
-      ${tile("Dropped off", m.off_bus.length)}
-      ${tile("Flags open", m.flags, true)}
+      <div class="head-actions">
+        ${enRoute
+          ? `<button class="pill-btn" onclick="routeAction('end')">End route</button>`
+          : `<button class="pill-btn primary" onclick="routeAction('start')">Start route</button>`}
+      </div>
+    </section>
+    <div class="cards">
+      ${card(ended ? "Still on bus" : "Aboard now", m.on_bus.length, ended)}
+      ${card(ended ? "No show" : "Not boarded yet", m.not_boarded.length, ended)}
+      ${card("Dropped off", m.off_bus.length)}
+      ${card("Needs attention", m.flags, true)}
     </div>
-    ${leftOn}${banners}
-    <div class="card">
-      <div class="card-head"><h2>Live manifest</h2><span class="hint">Click a student for their history · camera icon for the scan clip</span></div>
-      ${section("Needs attention", attention)}
-      ${section("Aboard", aboard)}
-      ${section(ended ? "No show" : "Not boarded yet", waiting)}
-      ${section("Dropped off", off)}
-      ${attention.length + aboard.length + waiting.length + off.length ? ""
+    ${attention}
+    <section class="panel">
+      <div class="panel-head"><h2>Passengers</h2>
+        <span class="hint">Click a student for their history · camera for the scan clip</span></div>
+      ${group("bus", ended ? "Still on bus" : "Aboard", aboard)}
+      ${group("people", ended ? "No show" : "Not boarded yet", waiting)}
+      ${off.length ? `<details ${droppedOpen ? "open" : ""} ontoggle="droppedOpen = this.open">
+          <summary class="group">${icon("chev", 16)}Dropped off · ${off.length}</summary>${off.join("")}
+        </details>` : ""}
+      ${aboard.length + waiting.length + off.length ? `<div style="height:12px"></div>`
         : `<div class="empty-state">No roster and no scans yet.</div>`}
-    </div>`;
+    </section>`;
 }
 
 async function routeAction(action) {
@@ -383,8 +509,8 @@ async function showStudent(userId) {
   // Where they are right now: first row of `now` (server puts "aboard" first).
   const now = s.now[0];
   const nowText = now
-    ? `${pill(now.status)} <span class="muted">${esc(now.bus_name)}${now.on ? " · since " + clock(now.on) : ""}</span>`
-    : `<span class="pill gray">Not on an active route</span>`;
+    ? `${status(now.status)}<span class="muted">${esc(now.bus_name)}${now.on ? " since " + clock(now.on) : ""}</span>`
+    : `<span class="status muted"><span class="dot gray"></span>Not on an active route</span>`;
 
   const rides = s.history.filter(r => r.on && r.status !== "rejected").length;
   const noShows = s.history.filter(r => r.status === "no_show").length;
@@ -399,31 +525,35 @@ async function showStudent(userId) {
         `${s.name} · ${r.status === "rejected" ? "rejected at" : "boarded"} ${r.bus_name} · ${day(r.on)} ${clock(r.on)}`) : "—"}</td>
       <td class="num">${r.off ? clock(r.off) + clip(r.off_camera, r.off,
         `${s.name} · got off ${r.bus_name} · ${day(r.off)} ${clock(r.off)}`) : "—"}</td>
-      <td>${pill(r.status)}</td>
+      <td>${status(r.status)}</td>
     </tr>`).join("");
 
   $("page").innerHTML = `
-    <a class="back" href="#students">← All students</a>
-    <div class="card"><div class="header">
+    <section class="panel head-panel">
+      ${backButton("#students", "All students")}
       <div class="avatar big">${esc(initials(s.name))}</div>
-      <div>
-        <div class="title">${esc(s.name)}</div>
-        <div class="muted">${s.buses.length ? "Assigned to " + esc(s.buses.join(", ")) : "Not assigned to a bus"}</div>
+      <div class="head-text">
+        <div class="head-title">${esc(s.name)}</div>
+        <div class="status-line">
+          ${nowText}
+          <span class="divider"></span>
+          <span class="muted">${s.buses.length ? "Assigned to " + esc(s.buses.join(", ")) : "Not assigned to a bus"}</span>
+        </div>
       </div>
-      <div class="actions">${nowText}</div>
-    </div></div>
-    <div class="tiles">
-      ${tile("Rides", rides)}
-      ${tile("No shows", noShows, true)}
-      ${tile("Flags", flags, true)}
-      ${tile("Routes on record", s.history.length)}
+    </section>
+    <div class="cards">
+      ${card("Rides", rides)}
+      ${card("No shows", noShows, true)}
+      ${card("Flags", flags, true)}
+      ${card("Routes on record", s.history.length)}
     </div>
-    <div class="card">
-      <div class="card-head"><h2>Ridership history</h2><span class="hint">Newest first</span></div>
+    <section class="panel">
+      <div class="panel-head"><h2>Ridership history</h2><span class="count">${s.history.length}</span>
+        <span class="hint">Newest first · click a row for that bus</span></div>
       ${rows ? `<table><thead><tr><th>Date</th><th>Bus</th><th>Route</th><th>On</th><th>Off</th><th>Status</th></tr></thead>
                <tbody>${rows}</tbody></table>`
              : `<div class="empty-state">No rides recorded yet.</div>`}
-    </div>`;
+    </section>`;
 }
 
 // ---------------------------------------------------- page: students ----
@@ -439,17 +569,16 @@ function showStudents() {
   const list = matching($("search").value);
   const rows = list.map(s => `
     <tr class="link" onclick="location.hash='student/${encodeURIComponent(s.user_id)}'">
-      <td><div class="cell"><div class="avatar">${esc(initials(s.name))}</div>${esc(s.name)}</div></td>
+      <td><div class="cell"><div class="avatar small">${esc(initials(s.name))}</div><span class="strong">${esc(s.name)}</span></div></td>
       <td>${s.buses.length ? esc(s.buses.join(", ")) : `<span class="muted">Not assigned</span>`}</td>
     </tr>`).join("");
   $("page").innerHTML = `
-    <h1>Students</h1>
-    <div class="card">
-      <div class="card-head"><h2>${list.length} of ${students.length} students</h2>
+    <section class="panel">
+      <div class="panel-head"><h2>Students</h2><span class="count">${list.length} of ${students.length}</span>
         <span class="hint">Type in the search bar to filter</span></div>
       ${rows ? `<table><thead><tr><th>Student</th><th>Assigned bus</th></tr></thead><tbody>${rows}</tbody></table>`
              : `<div class="empty-state">No students match.</div>`}
-    </div>`;
+    </section>`;
 }
 
 // ------------------------------------------------------- search box ----
@@ -466,10 +595,10 @@ function drawSearchResults() {
     ? hits.map((s, i) => `
         <a href="#student/${encodeURIComponent(s.user_id)}" class="${i === searchPick ? "active" : ""}"
            onmousedown="event.preventDefault(); openStudent('${encodeURIComponent(s.user_id)}')">
-          <div class="avatar">${esc(initials(s.name))}</div>
-          <div><div>${esc(s.name)}</div><div class="muted">${esc(s.buses.join(", ") || "Not assigned")}</div></div>
+          <div class="avatar small">${esc(initials(s.name))}</div>
+          <div><div>${esc(s.name)}</div><div class="sub">${esc(s.buses.join(", ") || "Not assigned")}</div></div>
         </a>`).join("")
-    : `<div class="empty">No students match “${esc(query)}”</div>`;
+    : `<div class="empty sub">No students match “${esc(query)}”</div>`;
   box.hidden = false;
 }
 
@@ -576,7 +705,7 @@ function closeClip() {
 // Clip clicks: one handler for every clip link on every page. Runs in the
 // capture phase so the click doesn't also open the row underneath.
 document.addEventListener("click", e => {
-  const link = e.target.closest("a.clip[data-camera]");
+  const link = e.target.closest("a[data-camera]");
   if (!link) return;
   e.preventDefault();
   e.stopPropagation();
@@ -601,8 +730,9 @@ async function refreshRoster() {
 
 async function refresh() {
   const hash = decodeURIComponent(location.hash.slice(1));
-  $("nav-buses").className = hash === "" || hash.startsWith("bus/") ? "active" : "";
-  $("nav-students").className = hash.startsWith("student") ? "active" : "";
+  const onBuses = hash === "" || hash.startsWith("bus/");
+  for (const id of ["tab-buses", "rail-buses"]) $(id).className = onBuses ? "active" : "";
+  for (const id of ["tab-students", "rail-students"]) $(id).className = onBuses ? "" : "active";
 
   if (hash.startsWith("bus/")) return showBus(hash.slice(4));
   if (hash.startsWith("student/")) return showStudent(hash.slice(8));
@@ -613,7 +743,7 @@ async function refresh() {
   return showOverview();
 }
 
-window.onhashchange = () => { window.scrollTo(0, 0); refresh(); };
+window.onhashchange = () => { window.scrollTo(0, 0); droppedOpen = false; refresh(); };
 refresh();
 setInterval(refresh, 2000);
 </script>
