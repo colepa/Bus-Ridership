@@ -35,6 +35,17 @@ Python 3.12 · FastAPI · uvicorn · `uv`. State in memory, saved to a JSON file
 so a restart doesn't kill the demo. Plain HTML + `fetch` — no React, no build
 step.
 
+## UI: look like Verkada Command
+
+The page should look like a native Command page. Match Command's style:
+icon-only left rail, large page title with underline tabs, gray rounded
+search field, outlined pill buttons (blue fill for the main action), white
+panels on a light gray background, status as colored dot + text (not
+pills), gray initials avatars, tall list rows. Reuse those patterns rather
+than inventing new components. Reference: `mockups/manifest-mockup.html`.
+Only add controls that map to a real feature — no decorative buttons,
+filters, or stats we don't have data for (stops, grades, GPS, etc.).
+
 ## How to work with me
 
 - Ask before building anything non-trivial. A question beats the wrong 400 lines.
@@ -55,7 +66,7 @@ and card numbers from the test org and stays out of git.
   Read before touching the webhook.
 
 
-## Status (2026-10-13)
+## Status (2026-10-14)
 
 MVP scope 1–4 built and working against the real AC12. Pushed to
 github.com/colepa/Bus-Ridership.
@@ -104,7 +115,13 @@ github.com/colepa/Bus-Ridership.
   never in the webhook. `org_id` for streaming is learned from the webhook.
   Fake buses can borrow a real camera with an optional `"camera_id"` in
   `fake_buses.json`.
-- UI styled after the proposal mock (Command-like: sidebar, tiles, pills).
+- UI redesigned 2026-10-14 to mimic Command (see "UI" section above). Bus
+  page priority: problems first ("Needs attention", with an all-clear state),
+  then counts vs roster, then "Last scan N min ago" so stale data isn't
+  mistaken for all clear, then passengers grouped Aboard / Not boarded /
+  Dropped off (collapsed). One route button: Start when no route is
+  running, End while en route. Labels switch to "Still on bus" / "No show"
+  after the route ends. Student page uses the same header/cards/table style.
 - Backfill dropped from scope — testing is stationary with good connectivity.
 
 **How to run**
