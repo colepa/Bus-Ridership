@@ -10,6 +10,8 @@ Schedules on access levels are ignored: in a level means on the roster.
 
 Needs VERKADA_API_KEY with read access to Access Control (doors, access levels,
 groups, users).
+
+fetch_photos() gets the roster's profile photos, also on "Refresh roster".
 """
 
 import os
@@ -34,6 +36,57 @@ def api_get(token, path, params=None):
     if r.status_code != 200:
         raise RuntimeError(f"GET {path} -> HTTP {r.status_code}: {r.text[:300]}")
     return r.json()
+
+
+def fetch_buses():
+    token = get_token()
+
+    # Every door in the org is a bus.
+    buses = {}
+    for door in api_get(token, "/access/v1/doors").get("doors", []):
+        # The docs don't list the id field on doors; try the likely names.
+        door_id = door.get("door_id") or door.get("doorId") or door.get("id")
+        if door_id:
+            buses[door_id] = {"name": door.get("name") or door_id, "roster": {}}
+        else:
+            print(f"[roster] door with no id field, skipping: keys={sorted(door)}")
+
+    # user_id -> name, for everyone.
+    names = {}
+    for member in api_get(token, "/access/v1/access_users").get("access_members", []):
+        names[member["user_id"]] = member.get("full_name") or member["user_id"]
+
+    # Access levels say which groups can open which doors.
+    group_users = {}   # cache: each group is fetched once even if it's in several levels
+    for level in api_get(token, "/access/v1/door/access_level").get("access_levels", []):
+        for group_id in level.get("access_groups", []):
+            if group_id not in group_users:
+                group = api_get(token, "/access/v1/access_groups/group", {"group_id": group_id})
+                group_users[group_id] = group.get("user_ids", [])
+            for door_id in level.get("doors", []):
+                bus = buses.setdefault(door_id, {"name": door_id, "roster": {}})
+                for user_id in group_users[group_id]:
+                    bus["roster"][user_id] = names.get(user_id, user_id)
+
+    for door_id, bus in buses.items():
+        print(f"[roster] {bus['name']}: {len(bus['roster'])} students")
+    return buses
+
+
+def fetch_photos(user_ids):
+    """{user_id: image bytes} for each user who has a profile photo in Command.
+    Users without one get a 404 and are left out. One call per user."""
+    token = get_token()
+    photos = {}
+    for user_id in user_ids:
+        r = httpx.get(f"{BASE}/access/v1/access_users/user/profile_photo",
+                      headers={"x-verkada-auth": token}, params={"user_id": user_id}, timeout=20)
+        if r.status_code == 200:
+            photos[user_id] = r.content
+        elif r.status_code != 404:
+            raise RuntimeError(f"GET profile_photo -> HTTP {r.status_code}: {r.text[:300]}")
+    print(f"[photos] {len(photos)} of {len(user_ids)} users have a photo")
+    return photos
 
 
 def footage_link(camera_id, timestamp):

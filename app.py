@@ -27,6 +27,7 @@ import verkada_api  # after load_dotenv, so it sees VERKADA_REGION
 
 SECRET = os.environ["VERKADA_WEBHOOK_SECRET"]
 STATE_FILE = HERE / "state.json"
+PHOTOS = HERE / "photos"   # <user_id>.jpg profile photos from Command, filled by "Refresh roster"
 
 DEBOUNCE_SECONDS = 3       # a second tap by the same student within this is ignored
 MAX_SIGNATURE_AGE = 60      # seconds; matches Verkada's own sample
@@ -52,6 +53,10 @@ REJECTED_EVENTS = {"door_keycard_entered_rejected"}
 #             },
 #             # Who has access to this door in Command. Filled by "Refresh roster".
 #             "roster": {"<user_id>": "Student Name"},
+#             # Issues someone pressed "Resolve" on, this route: {issue key: time}.
+#             # Keys: "alert:<event_id>", "wrong_bus:<user_id>", "never_off:<user_id>".
+#             # Resolved issues leave "Needs attention" but are kept for the record.
+#             "resolved": {"wrong_bus:<user_id>": 1791847900},
 #         },
 #     },
 #     # Finished routes, oldest first. "Start route" moves the bus's previous
@@ -60,7 +65,7 @@ REJECTED_EVENTS = {"door_keycard_entered_rejected"}
 #     # from `simulate.py history`.
 #     "past_routes": [
 #         {"door_id": "...", "bus_name": "Bus 12", "started_at": ..., "ended_at": ...,
-#          "roster": {...}, "taps": {...}, "alerts": {...}},
+#          "roster": {...}, "taps": {...}, "alerts": {...}, "resolved": {...}},
 #     ],
 # }
 #
@@ -72,6 +77,8 @@ def load_state():
         loaded = json.loads(STATE_FILE.read_text())
         if "buses" in loaded:
             loaded.setdefault("past_routes", [])
+            for bus in loaded["buses"].values():
+                bus.setdefault("resolved", {})   # state.json from before "Resolve" existed
             return loaded
         # state.json from the single-bus version: start fresh (it's a demo).
     return {"buses": {}, "past_routes": []}
@@ -106,7 +113,8 @@ def add_fake_buses():
 
 
 def new_bus(name):
-    return {"name": name, "route": None, "taps": {}, "alerts": {}, "roster": {}, "camera_id": None}
+    return {"name": name, "route": None, "taps": {}, "alerts": {}, "roster": {}, "resolved": {},
+            "camera_id": None}
 
 
 def clip_camera(tap, bus):
@@ -159,8 +167,11 @@ def compute_manifest(bus):
             "on_camera": clip_camera(counted[0], bus),
             "last_camera": clip_camera(counted[-1], bus),
             "wrong_bus": bool(bus["roster"]) and user_id not in bus["roster"],
+            # Still on the bus at the end, then someone pressed "Mark as dropped off":
+            # the time they pressed it. Counts as off the bus.
+            "marked_off": None if route_active(bus) else bus["resolved"].get(f"never_off:{user_id}"),
         }
-        if len(counted) % 2 == 1:
+        if len(counted) % 2 == 1 and not student["marked_off"]:
             on_bus.append(student)
         else:
             off_bus.append(student)
@@ -173,14 +184,35 @@ def compute_manifest(bus):
     return on_bus, off_bus, not_boarded
 
 
-def count_flags(bus, on_bus, off_bus):
-    """Things a dispatcher should look at: rejected scans, wrong-bus riders,
-    and (once the route has ended) anyone who never tapped off."""
-    flags = len(bus["alerts"])
-    flags += sum(1 for s in on_bus + off_bus if s["wrong_bus"])
+def list_flags(bus, on_bus, off_bus):
+    """Unresolved things a dispatcher should look at: rejected scans, wrong-bus
+    riders, and (once the route has ended) anyone who never tapped off.
+    Returns [{"key", "title", "who", "time"}, ...], newest first.
+    The keys match the ones the bus page sends to /resolve."""
+    flags = []
+    for event_id, a in bus["alerts"].items():
+        if a["user_id"]:
+            flags.append({"key": f"alert:{event_id}", "title": "Card rejected",
+                          "who": a["name"], "time": a["time"]})
+        else:
+            flags.append({"key": f"alert:{event_id}", "title": "Unrecognized card",
+                          "who": f"Card {a['card']}", "time": a["time"]})
+    for s in on_bus + off_bus:
+        if s["wrong_bus"]:
+            flags.append({"key": f"wrong_bus:{s['user_id']}", "title": "Wrong bus",
+                          "who": s["name"], "time": s["on_at"]})
     if bus["route"] is not None and not route_active(bus):
-        flags += sum(1 for s in on_bus if not s["wrong_bus"])
+        for s in on_bus:
+            if not s["wrong_bus"]:
+                flags.append({"key": f"never_off:{s['user_id']}", "title": "Never tapped off",
+                              "who": s["name"], "time": s["on_at"]})
+    flags = [f for f in flags if f["key"] not in bus["resolved"]]
+    flags.sort(key=lambda f: f["time"], reverse=True)
     return flags
+
+
+def count_flags(bus, on_bus, off_bus):
+    return len(list_flags(bus, on_bus, off_bus))
 
 
 def assigned_buses(user_id):
@@ -201,6 +233,7 @@ def current_routes():
             "door_id": door_id, "bus_name": bus["name"],
             "started_at": bus["route"]["started_at"], "ended_at": bus["route"]["ended_at"],
             "roster": bus["roster"], "taps": bus["taps"], "alerts": bus["alerts"],
+            "resolved": bus["resolved"],
         })
     return routes
 
@@ -216,6 +249,7 @@ def student_rows(route, user_id):
             "on": None, "off": None, "on_camera": None, "off_camera": None}
     bus = state["buses"].get(route["door_id"]) or {}
     assigned = user_id in route["roster"]
+    resolved = route.get("resolved", {})   # routes saved before "Resolve" existed have none
     rows = []
 
     taps = counted_taps(route["taps"]).get(user_id, [])
@@ -224,20 +258,26 @@ def student_rows(route, user_id):
         off = taps[i + 1]["time"] if i + 1 < len(taps) else None
         cameras = {"on_camera": clip_camera(taps[i], bus),
                    "off_camera": clip_camera(taps[i + 1], bus) if off else None}
+        resolved_at = None
         if route["roster"] and not assigned:
             status = "wrong_bus"
+            resolved_at = resolved.get(f"wrong_bus:{user_id}")
         elif off is not None:
             status = "dropped_off"
         elif route["ended_at"] is None:
             status = "aboard"
         else:
             status = "left_on_bus"
-        rows.append({**base, **cameras, "on": on, "off": off, "status": status})
+            resolved_at = resolved.get(f"never_off:{user_id}")
+            if resolved_at:
+                status = "dropped_off"   # marked as dropped off by hand; no off tap
+        rows.append({**base, **cameras, "on": on, "off": off, "status": status,
+                     "resolved_at": resolved_at})
 
-    for alert in route["alerts"].values():
+    for event_id, alert in route["alerts"].items():
         if alert["user_id"] == user_id:
             rows.append({**base, "on": alert["time"], "on_camera": clip_camera(alert, bus),
-                         "status": "rejected"})
+                         "status": "rejected", "resolved_at": resolved.get(f"alert:{event_id}")})
 
     if not rows and assigned:
         rows.append({**base, "status": "not_boarded" if route["ended_at"] is None else "no_show"})
@@ -362,6 +402,11 @@ async def page():
     return FileResponse(HERE / "index.html")
 
 
+@app.get("/bus.png")
+async def bus_picture():
+    return FileResponse(HERE / "bus.png")
+
+
 @app.get("/buses")
 async def buses():
     """One summary line per bus, for the overview."""
@@ -376,7 +421,11 @@ async def buses():
             "on_bus": len(on_bus),
             "off_bus": len(off_bus),
             "not_boarded": len(not_boarded),
+            # roster students only (no wrong-bus riders), for the progress bar
+            "roster_on": sum(1 for s in on_bus if not s["wrong_bus"]),
+            "roster_off": sum(1 for s in off_bus if not s["wrong_bus"]),
             "flags": count_flags(bus, on_bus, off_bus),
+            "issues": list_flags(bus, on_bus, off_bus),   # for the hover preview
         })
     summary.sort(key=lambda b: b["name"])
     return summary
@@ -388,11 +437,13 @@ async def bus_manifest(door_id: str):
     if bus is None:
         return JSONResponse({"error": "no such bus"}, status_code=404)
     on_bus, off_bus, not_boarded = compute_manifest(bus)
-    # Copies with "assigned" added, so the page can say "assigned to Bus 3".
+    # Copies with "assigned" added, so the page can say "assigned to Bus 3",
+    # and the event_id, which the page needs for the alert's resolve key.
     alerts = [
-        {**a, "assigned": assigned_buses(a["user_id"]) if a["user_id"] else [],
+        {**a, "event_id": event_id,
+         "assigned": assigned_buses(a["user_id"]) if a["user_id"] else [],
          "camera_id": clip_camera(a, bus)}
-        for a in sorted(bus["alerts"].values(), key=lambda a: a["time"], reverse=True)
+        for event_id, a in sorted(bus["alerts"].items(), key=lambda item: item[1]["time"], reverse=True)
     ]
     return {
         "door_id": door_id,
@@ -403,8 +454,24 @@ async def bus_manifest(door_id: str):
         "off_bus": off_bus,
         "not_boarded": not_boarded,
         "alerts": alerts,
+        "resolved": bus["resolved"],
         "flags": count_flags(bus, on_bus, off_bus),
     }
+
+
+@app.post("/bus/{door_id}/resolve")
+async def resolve(door_id: str, request: Request):
+    """Mark one "Needs attention" issue as dealt with. Body: {"key": "..."}
+    (see the "resolved" comment at the top). Kept with the route for the record."""
+    bus = state["buses"].get(door_id)
+    if bus is None:
+        return JSONResponse({"error": "no such bus"}, status_code=404)
+    key = (await request.json()).get("key")
+    if not key:
+        return JSONResponse({"error": "missing key"}, status_code=400)
+    bus["resolved"].setdefault(key, int(time.time()))
+    save_state()
+    return {"ok": True}
 
 
 @app.get("/students")
@@ -512,10 +579,12 @@ async def start_route(door_id: str):
             "started_at": bus["route"]["started_at"],
             "ended_at": bus["route"]["ended_at"] or int(time.time()),
             "roster": dict(bus["roster"]), "taps": bus["taps"], "alerts": bus["alerts"],
+            "resolved": bus["resolved"],
         })
     bus["route"] = {"started_at": int(time.time()), "ended_at": None}
     bus["taps"] = {}
     bus["alerts"] = {}
+    bus["resolved"] = {}
     save_state()
     return {"ok": True}
 
@@ -549,4 +618,43 @@ async def refresh_roster():
             bus["name"] = info["name"]
         bus["roster"] = info["roster"]
     save_state()
-    return {"ok": True, "buses": len(fetched)}
+
+    # Profile photos, saved as photos/<user_id>.jpg. A failure here (e.g. the
+    # API key can't read photos) doesn't undo the roster; the page says so.
+    # Who: everyone on a Command roster, plus anyone on no roster who has
+    # tapped (wrong bus, rejected) — so an unexpected rider has a face too.
+    # Not every user in the org: a district has thousands of staff cards.
+    user_ids = {u for info in fetched.values() for u in info["roster"]}
+    on_any_roster = {u for bus in state["buses"].values() for u in bus["roster"]}
+    user_ids |= set(all_students()) - on_any_roster
+    try:
+        photos = await asyncio.to_thread(verkada_api.fetch_photos, sorted(user_ids))
+    except Exception as e:
+        print(f"[photos] refresh failed: {e}")
+        return {"ok": True, "buses": len(fetched), "photo_error": str(e)}
+    PHOTOS.mkdir(exist_ok=True)
+    for user_id in user_ids:
+        path = PHOTOS / f"{user_id}.jpg"
+        if user_id in photos:
+            path.write_bytes(photos[user_id])
+        else:
+            path.unlink(missing_ok=True)     # photo removed in Command
+    return {"ok": True, "buses": len(fetched), "photos": len(photos)}
+
+
+@app.get("/photos")
+async def photo_list():
+    """{user_id: version} for everyone with a saved photo. The version (file
+    time) goes in the image URL, so a new photo isn't hidden by the browser cache."""
+    if not PHOTOS.exists():
+        return {}
+    return {p.stem: int(p.stat().st_mtime) for p in PHOTOS.glob("*.jpg")}
+
+
+@app.get("/photo/{user_id}")
+async def photo(user_id: str):
+    path = PHOTOS / f"{user_id}.jpg"
+    if not path.is_file():
+        return JSONResponse({"error": "no photo"}, status_code=404)
+    # Cached for a day: the page polls every 2 s and would re-fetch otherwise.
+    return FileResponse(path, headers={"Cache-Control": "max-age=86400"})

@@ -122,10 +122,25 @@ github.com/colepa/Bus-Ridership.
   Dropped off (collapsed). One route button: Start when no route is
   running, End while en route. Labels switch to "Still on bus" / "No show"
   after the route ends. Student page uses the same header/cards/table style.
+- Resolve (2026-10-19): one-click "Resolve" on each Needs attention row.
+  Stored per route in `bus["resolved"]` = {key: time}, keys `alert:<event_id>`,
+  `wrong_bus:<user_id>`, `never_off:<user_id>`; moved into `past_routes` with
+  the route. Resolved issues drop out of counts/overview, show in a collapsed
+  "Resolved" group on the bus page and as "Resolved <time>" on the student
+  page. No un-resolve, no note, no "who" (no auth).
+  "Never tapped off" uses the same key but the button says "Mark as dropped
+  off": `compute_manifest` then counts the student as off the bus
+  (`marked_off` = time), and the student page shows them as dropped off.
+- Photos (2026-10-19): "Refresh roster" also downloads each roster user's
+  Command profile photo (`GET /access/v1/access_users/user/profile_photo`,
+  404 = none) to `photos/<user_id>.jpg` (gitignored). Page loads `/photos`
+  and shows the photo, or initials if none. A photo failure doesn't undo the
+  roster. Not yet verified on real hardware.
 - Backfill dropped from scope — testing is stationary with good connectivity.
 
 **How to run**
-1. `uv run uvicorn app:app --port 8000`
+1. `uv run uvicorn app:app --port 8000 --reload` (`--reload` picks up
+   `app.py` edits; `index.html` is re-read on every page load anyway)
 2. `ngrok http 8000 --url https://hatchery-tactical-moneyless.ngrok-free.dev`
    (permanent free domain; webhook in Command points at `<that>/webhook`)
 3. Open the dashboard at `http://localhost:8000`, **not** the ngrok URL —

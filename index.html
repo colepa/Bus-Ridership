@@ -25,9 +25,12 @@
 
   /* left icon rail */
   .rail { width: 76px; flex: none; background: var(--panel); border-right: 1px solid var(--border);
-          display: flex; flex-direction: column; align-items: center; gap: 14px; padding-top: 88px;
+          display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 20px 0;
           position: sticky; top: 0; height: 100vh; }
-  .rail a { width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; color: #3c4650; }
+  .rail a, .rail .deco { width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; color: #3c4650; }
+  .rail .waffle { height: 32px; margin-top: 8px; }            /* visual only, not clickable */
+  .rail .bottom { margin-top: auto; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .rail .avatar { width: 40px; height: 40px; border-radius: 50%; background: #000; margin-top: 6px; }
   .rail a:hover { background: var(--chip); }
   .rail a.active { background: var(--blue); color: #fff; }
 
@@ -74,8 +77,46 @@
   .card { background: var(--panel); border-radius: 12px; padding: 18px 24px; }
   .card-label { font-size: 14px; color: var(--muted); }
   .card-value { font-size: 24px; font-weight: 600; margin-top: 4px; }
-  .card.red .card-value { color: var(--red); }
+  /* fleet page boxes: round icon (same as Needs attention rows) + number + label */
+  .card.icon-card { display: flex; align-items: center; gap: 16px; }
+  .icon-card .card-value { margin-top: 0; line-height: 1.1; }
+  /* Needs attention box: hover shows every open issue in the fleet */
+  .card.has-preview { position: relative; cursor: default; }
+  .card.has-preview::after { content: ""; position: absolute; left: 0; right: 0; top: 100%; height: 10px; } /* hover bridge to the pop-up */
+  .card.has-preview .preview { right: 0; width: 360px; max-height: 420px; overflow-y: auto; }
+  .card.has-preview:hover .preview { opacity: 1; transform: translateY(0); visibility: visible;
+                                     transition-delay: 0s; }
+  a.preview-row { color: inherit; text-decoration: none; }
+  a.preview-row:hover { background: #f8fafb; }
   .empty-state { padding: 32px 24px; text-align: center; color: var(--muted); }
+
+  /* boarding progress bar on the bus page */
+  .progress { padding: 20px 24px; }
+  .progress-head { display: flex; align-items: baseline; gap: 10px; }
+  .progress-big { font-size: 24px; font-weight: 600; }
+  .progress-head .pct { margin-left: auto; color: var(--muted); font-size: 14px; font-weight: 500; }
+  .bar { display: flex; height: 14px; border-radius: 999px; background: #e4e8ec; margin: 12px 0; }
+  .bar span { height: 100%; transition: width .3s, filter .15s; position: relative; }
+  .bar span:first-child { border-top-left-radius: 999px; border-bottom-left-radius: 999px; }
+  .bar span:last-child { border-top-right-radius: 999px; border-bottom-right-radius: 999px; }
+  .bar .light { background: #e4e8ec; }
+  .bar span:hover { filter: brightness(.92); }
+  /* hover label above a bar part, e.g. "12 aboard" */
+  .bar span::after { content: attr(data-tip); position: absolute; bottom: calc(100% + 8px); left: 50%;
+    transform: translate(-50%, 4px); background: #1f2933; color: #fff; font-size: 13px; font-weight: 500;
+    padding: 4px 10px; border-radius: 6px; white-space: nowrap; z-index: 10; pointer-events: none;
+    opacity: 0; transition: opacity .15s ease, transform .15s ease; }
+  .bar span:hover::after { opacity: 1; transform: translate(-50%, 0); }   /* fades in and rises slightly */
+  .bar .green { background: var(--green); } .bar .red { background: var(--red); }
+  .bar .blue { background: var(--blue); }
+  .dot.blue { background: var(--blue); }
+  .dot.light { background: #e4e8ec; }   /* same gray as the "not boarded / no show" part of the bar */
+  /* same bar in the overview table, a bit thinner */
+  td.boarding { width: 55%; }
+  .boarding-row { display: flex; align-items: center; gap: 16px; }
+  .boarding-row > .num { width: 120px; flex: none; text-align: right; }
+  td.boarding .bar { flex: 1; height: 10px; margin: 0; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 24px; }
 
   /* header panel on bus and student pages */
   .head-panel { display: flex; align-items: center; gap: 18px; padding: 20px 24px; }
@@ -85,14 +126,25 @@
                  font-size: 14px; font-weight: 500; }
   .status-line .divider { height: 16px; }
   .head-actions { margin-left: auto; display: flex; gap: 10px; align-items: center; }
-  .bus-badge { width: 60px; height: 60px; border-radius: 8px; background: var(--blue-soft); color: var(--blue);
-               display: grid; place-items: center; font-size: 24px; font-weight: 700; flex: none; }
-  .bus-badge.small { width: 36px; height: 36px; font-size: 15px; border-radius: 6px; }
+  /* bus picture, no box: sits on the panel's own background */
+  .bus-badge { width: 80px; height: 60px; flex: none;
+               object-fit: contain; padding: 6px; }
+  .bus-badge.small { width: 48px; height: 36px; border-radius: 6px; padding: 3px; }
 
   /* status = colored dot + text, like Command's "● Online" */
   .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; flex: none; }
   .dot.green { background: var(--green); } .dot.red { background: var(--red); }
   .dot.amber { background: var(--amber); } .dot.gray { background: #b4bcc5; }
+  /* radar ping for buses en route: a ring grows out of the dot and fades */
+  .dot.pulse { position: relative; }
+  .dot.pulse::after { content: ""; position: absolute; inset: 0; border-radius: 50%; background: inherit;
+                      animation: ping 1.6s ease-out infinite; animation-delay: inherit; }
+  @keyframes ping { 0% { transform: scale(1); opacity: .6; } 80%, 100% { transform: scale(2.4); opacity: 0; } }
+  /* "Refreshing roster..." — the three dots fade in one after another */
+  .loading-dots span { animation: dot-fade 1.4s infinite; opacity: 0; }
+  .loading-dots span:nth-child(2) { animation-delay: .2s; }
+  .loading-dots span:nth-child(3) { animation-delay: .4s; }
+  @keyframes dot-fade { 0%, 80%, 100% { opacity: 0; } 40% { opacity: 1; } }
   .status { display: inline-flex; align-items: center; font-size: 14px; font-weight: 500; white-space: nowrap; }
 
   /* avatars */
@@ -100,6 +152,7 @@
             display: grid; place-items: center; font-size: 15px; font-weight: 600; flex: none; }
   .avatar.small { width: 34px; height: 34px; font-size: 13px; }
   .avatar.big { width: 60px; height: 60px; font-size: 20px; }
+  .avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
 
   /* "Needs attention": rows styled like Command event cards */
   .event { display: flex; align-items: center; gap: 16px; padding: 14px 24px; }
@@ -111,14 +164,22 @@
   .event-title { font-weight: 600; }
   .event-title.red { color: var(--red); } .event-title.amber { color: var(--amber); }
   .event-title.green { color: var(--green); }
+  .event-icon.gray { background: #eef0f3; color: var(--muted); }   /* resolved issues */
+  .event-title.gray { color: var(--muted); }
   .event-body { flex: 1; min-width: 0; }
   .event-time { color: var(--muted); font-size: 14px; margin-right: 8px; white-space: nowrap; }
   .event a.name { font-weight: 600; }
   .event a.name:hover { color: var(--blue); }
 
   /* passenger list: rows like Command's door and user lists */
-  .group { display: flex; align-items: center; gap: 8px; padding: 18px 24px 6px; color: var(--muted);
-           font-size: 14px; font-weight: 500; list-style: none; }
+  /* each group (Aboard / Not boarded / Dropped off) is its own rounded box */
+  .group-box { margin: 12px 24px 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .group { display: flex; align-items: center; gap: 8px; padding: 10px 24px;
+           background: #f8f9fb; border-bottom: 1px solid var(--line);
+           font-size: 14px; font-weight: 600; list-style: none; }
+  details.group-box:not([open]) .group { border-bottom: 0; }
+  .group-box .row:last-child .row-main { border-bottom: 0; }
+  .group svg { color: var(--muted); }
   details > summary.group { cursor: pointer; }
   details > summary::-webkit-details-marker { display: none; }
   .chev { transition: transform .15s; }
@@ -142,6 +203,31 @@
   td .cell { display: flex; align-items: center; gap: 14px; }
   td .strong { font-weight: 600; }
   .red-text { color: var(--red); font-weight: 600; }
+  /* overview "Needs attention" cell: warning sign + count, or a check */
+  .attn { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+  .attn.amber { color: var(--amber); } .attn.green { color: var(--green); } .attn.red { color: var(--red); }
+  .attn-text { color: var(--muted); font-weight: 500; font-size: 14px; }
+  /* hover preview of a bus's issues */
+  .attn-wrap { position: relative; display: inline-block; }
+  /* Invisible strip over the 8px gap down to the pop-up, so moving the
+     mouse onto the pop-up doesn't count as leaving. */
+  .attn-wrap::after { content: ""; position: absolute; left: 0; right: 0; top: 100%; height: 10px; }
+  /* Hidden with `visibility` so it can wait .2 s before hiding: a quick or
+     slightly off-line mouse move onto the pop-up still makes it. */
+  .preview { position: absolute; top: calc(100% + 8px); right: 0; z-index: 30; width: 320px;
+             background: var(--panel); border-radius: 12px; box-shadow: 0 8px 28px rgba(0,0,0,.15);
+             padding: 6px 0; white-space: normal;
+             opacity: 0; transform: translateY(-4px); visibility: hidden;
+             transition: opacity .15s ease .2s, transform .15s ease .2s, visibility 0s linear .35s; }
+  .attn-wrap:hover .preview { opacity: 1; transform: translateY(0); visibility: visible;
+                              transition-delay: 0s; }
+  .preview-row { display: flex; align-items: center; gap: 12px; padding: 8px 16px; }
+  .preview-row + .preview-row { border-top: 1px solid var(--line); }
+  .preview-icon { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; flex: none;
+                  background: var(--amber-soft); color: var(--amber); }
+  .preview-icon.red { background: var(--red-soft); color: var(--red); }
+  .preview-text { flex: 1; min-width: 0; font-size: 14px; }
+  .preview-more { padding: 8px 16px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
 
   /* camera clip buttons */
   .clip { width: 38px; height: 38px; border-radius: 50%; color: #3c4650; flex: none;
@@ -199,15 +285,41 @@
     <rect x="3" y="5.5" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h4"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M9 6.5h11M9 12h11M9 17.5h11"/><circle cx="4.5" cy="6.5" r="0.8"/><circle cx="4.5" cy="12" r="0.8"/><circle cx="4.5" cy="17.5" r="0.8"/></symbol>
   <symbol id="i-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <path d="M9.5 6l6 6-6 6"/></symbol>
   <symbol id="i-close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
     <path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <!-- rail decoration only (not clickable) -->
+  <symbol id="i-waffle" viewBox="0 0 24 24" fill="currentColor">
+    <circle cx="5" cy="5" r="1.8"/><circle cx="12" cy="5" r="1.8"/><circle cx="19" cy="5" r="1.8"/>
+    <circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/>
+    <circle cx="5" cy="19" r="1.8"/><circle cx="12" cy="19" r="1.8"/><circle cx="19" cy="19" r="1.8"/></symbol>
+  <symbol id="i-bugdoc" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M14 2.5H6.5a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V8z"/><path d="M14 2.5V8h5.5"/>
+    <ellipse cx="12" cy="15" rx="2.2" ry="3"/><path d="M12 12v6M9.8 14H8.5M15.5 14h-1.3M9.8 16.5l-1.2.8M14.2 16.5l1.2.8M10.6 12.3l-.9-.9M13.4 12.3l.9-.9"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 1.5h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></symbol>
+  <symbol id="i-help" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="12" r="9.5"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6M12 17v.1"/></symbol>
+  <symbol id="i-briefcase" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5a1.5 1.5 0 0 1 1.5-1.5h3A1.5 1.5 0 0 1 15 5v2M3 13h18M8 11.5v3M16 11.5v3"/></symbol>
 </svg>
 
 <nav class="rail">
+  <span class="deco waffle"><svg width="22" height="22"><use href="#i-waffle"/></svg></span>
   <a href="#" id="rail-buses" title="Buses"><svg width="24" height="24"><use href="#i-bus"/></svg></a>
   <a href="#students" id="rail-students" title="Students"><svg width="24" height="24"><use href="#i-people"/></svg></a>
+  <div class="bottom">  <!-- visual only, not clickable -->
+    <span class="deco"><svg width="24" height="24"><use href="#i-bugdoc"/></svg></span>
+    <span class="deco"><svg width="24" height="24"><use href="#i-bell"/></svg></span>
+    <span class="deco"><svg width="24" height="24"><use href="#i-help"/></svg></span>
+    <span class="deco"><svg width="24" height="24"><use href="#i-briefcase"/></svg></span>
+    <span class="avatar"></span>
+  </div>
 </nav>
 
 <div class="content">
@@ -276,7 +388,16 @@ function ago(t) {
 function initials(name) {
   return String(name).split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join("");
 }
-function busNumber(name) { const m = String(name).match(/\d+/); return m ? m[0] : String(name)[0]; }
+
+// Profile photos from Command: {user_id: version}. Loaded at start and after
+// "Refresh roster". No photo -> initials, like Command.
+let photos = {};
+async function loadPhotos() { photos = (await getJSON("/photos")) || {}; }
+function avatar(userId, name, size = "") {
+  const v = photos[userId];
+  const inner = v ? `<img src="/photo/${encodeURIComponent(userId)}?v=${v}" alt="">` : esc(initials(name));
+  return `<div class="avatar ${size}">${inner}</div>`;
+}
 async function getJSON(url) { const r = await fetch(url); return r.ok ? r.json() : null; }
 function icon(name, size = 20) { return `<svg width="${size}" height="${size}"><use href="#i-${name}"/></svg>`; }
 
@@ -285,7 +406,7 @@ const STATUS = {
   aboard:      ["Aboard", "green"],
   dropped_off: ["Dropped off", "gray"],
   not_boarded: ["Not boarded yet", "gray"],
-  no_show:     ["No show", "red"],
+  no_show:     ["No show", "amber"],
   left_on_bus: ["Never tapped off", "red"],
   wrong_bus:   ["Wrong bus", "amber"],
   rejected:    ["Rejected scan", "amber"],
@@ -297,14 +418,36 @@ function status(name) {
   return `<span class="status"><span class="dot ${color}"></span>${label}</span>`;
 }
 // "● En route since 3:05 PM" / "● Route ended 4:02 PM" / "● No route yet"
-function routeStatus(route) {
+// pulse: make the green dot gently blink (used on the overview).
+function routeStatus(route, pulse = false) {
   if (!route) return `<span class="status muted"><span class="dot gray"></span>No route yet</span>`;
   if (route.ended_at !== null) return `<span class="status"><span class="dot gray"></span>Route ended ${clock(route.ended_at)}</span>`;
-  return `<span class="status"><span class="dot green"></span>En route since ${clock(route.started_at)}</span>`;
+  // The page redraws every 2 s, which would restart the blink. Starting the
+  // animation at "where it would be now" keeps it smooth across redraws.
+  const phase = pulse ? ` pulse" style="animation-delay:-${(Date.now() % 1600) / 1000}s` : "";
+  return `<span class="status"><span class="dot green${phase}"></span>En route since ${clock(route.started_at)}</span>`;
 }
-function card(label, value, redIfAny) {
-  const red = redIfAny && value > 0 ? "red" : "";
-  return `<div class="card ${red}"><div class="card-label">${label}</div><div class="card-value num">${value}</div></div>`;
+// Fleet page box: colored round icon, then the number, then the label under it.
+// color: "green" / "gray" / "red" / "amber" (the .event-icon colors).
+// preview: optional hover pop-up (from issuePreview).
+function iconCard(iconName, color, label, value, preview = "") {
+  return `<div class="card icon-card ${preview ? "has-preview" : ""}">
+    <div class="event-icon ${color}">${icon(iconName, 24)}</div>
+    <div><div class="card-value num">${value}</div><div class="card-label">${label}</div></div>
+    ${preview}
+  </div>`;
+}
+// Boarding progress bar: dropped off (green), then aboard (blue, or red once
+// the route has ended), then not boarded (light gray). Hover a part for its count.
+function progressBar(nOff, nAboard, nTotal, ended) {
+  const nWaiting = nTotal - nOff - nAboard;
+  const part = (cls, n, label) => n > 0
+    ? `<span class="${cls}" style="width:${100 * n / nTotal}%" data-tip="${n} ${label}"></span>` : "";
+  return `<div class="bar">
+    ${part("green", nOff, "dropped off")}
+    ${part(ended ? "red" : "blue", nAboard, ended ? "still on bus" : "aboard")}
+    ${part("light", nWaiting, ended ? "no show" : "not boarded yet")}
+  </div>`;
 }
 function backButton(hash, title) {
   return `<a class="round-btn" href="${hash}" title="${title}">${icon("back", 22)}</a>`;
@@ -328,7 +471,7 @@ function personRow(userId, name, sub, statusName, clipHtml) {
   const flagged = FLAGGED.includes(statusName) ? "flagged" : "";
   return `<div class="row ${flagged}" onclick="location.hash='student/${encodeURIComponent(userId)}'">
     <div class="row-main">
-      <div class="avatar">${esc(initials(name))}</div>
+      ${avatar(userId, name)}
       <div class="who"><div>${esc(name)}</div><div class="sub">${sub}</div></div>
       ${status(statusName)}${clipHtml}
     </div></div>`;
@@ -351,35 +494,81 @@ function studentLink(userId, name) {
 
 // ------------------------------------------------------- page: buses ----
 
+// Overview table cell: "38 of 50 boarded" + bar + counts. Same bar as the bus page.
+function boardingCell(b) {
+  if (!b.route) return `<span class="muted">${b.roster} on roster</span>`;
+  const ended = b.route.ended_at !== null;
+  const nTotal = b.roster_on + b.roster_off + b.not_boarded;
+  return `<div class="boarding-row">
+    ${progressBar(b.roster_off, b.roster_on, nTotal, ended)}
+    <span class="num"><span class="strong">${b.roster_on + b.roster_off}/${nTotal}</span> <span class="muted">boarded</span></span>
+  </div>`;
+}
+
+// Pop-up list of issues, shown on hover. Shows up to `max`.
+// Issues with a door_id are links to that bus's page. Issues with a bus
+// name (the fleet-wide list) also show which bus.
+function issuePreview(issues, max = 5) {
+  // Same icon and color as the bus page: card problems amber, rider problems red.
+  const rows = issues.slice(0, max).map(i => {
+    const isCard = i.title.toLowerCase().includes("card");
+    const inner = `
+      <span class="preview-icon ${isCard ? "amber" : "red"}">${icon(isCard ? "card" : "warn", 16)}</span>
+      <div class="preview-text"><div class="strong">${esc(i.title)}</div>
+        <div class="sub">${esc(i.who)}${i.bus ? " · " + esc(i.bus) : ""}</div></div>
+      <span class="sub">${clock(i.time)}</span>`;
+    return i.door_id
+      ? `<a class="preview-row link" href="#bus/${encodeURIComponent(i.door_id)}">${inner}</a>`
+      : `<div class="preview-row">${inner}</div>`;
+  }).join("");
+  const more = issues.length > max
+    ? `<div class="preview-more"><b>+${issues.length - max} more</b> · click the bus to see all ${issues.length}</div>` : "";
+  return `<div class="preview">${rows}${more}</div>`;
+}
+
 async function showOverview() {
   const buses = await getJSON("/buses");
-  const enRoute = buses.filter(b => b.route && b.route.ended_at === null).length;
-  const total = key => buses.reduce((n, b) => n + b[key], 0);
+  // En-route buses first; otherwise keep the server's name order.
+  const isEnRoute = b => b.route && b.route.ended_at === null;
+  buses.sort((a, b) => isEnRoute(b) - isEnRoute(a));
+  const enRoute = buses.filter(isEnRoute).length;
+  const finished = buses.filter(b => b.route && b.route.ended_at !== null).length;
+  const notStarted = buses.filter(b => !b.route).length;
+  // Every open issue on every bus, for the Needs attention box's hover list.
+  // Students left on a bus first, then newest first.
+  const leftOn = i => i.title === "Never tapped off";
+  const allIssues = buses.flatMap(b => b.issues.map(i => ({ ...i, bus: b.name, door_id: b.door_id })))
+    .sort((a, b) => (leftOn(b) - leftOn(a)) || (b.time - a.time));
+  const issues = allIssues.length;
+  const leftOnBus = allIssues.some(leftOn);
 
   const rows = buses.map(b => `
     <tr class="link" onclick="location.hash='bus/${encodeURIComponent(b.door_id)}'">
-      <td><div class="cell"><span class="bus-badge small">${esc(busNumber(b.name))}</span>
-        <div><div class="strong">${esc(b.name)}</div>${routeStatus(b.route)}</div></div></td>
-      <td class="num">${b.on_bus}</td>
-      <td class="num ${b.not_boarded && b.route ? "red-text" : ""}">${b.not_boarded}</td>
-      <td class="num">${b.off_bus}</td>
-      <td class="num">${b.roster}</td>
-      <td class="num ${b.flags ? "red-text" : ""}">${b.flags}</td>
+      <td><div class="cell"><img class="bus-badge small" src="/bus.png" alt="">
+        <div><div class="strong">${esc(b.name)}</div>${routeStatus(b.route, true)}</div></div></td>
+      <td class="boarding">${boardingCell(b)}</td>
+      <td>${b.flags
+        ? `<span class="attn-wrap"><span class="attn ${b.issues.some(i => i.title === "Never tapped off") ? "red" : "amber"}">${icon("warn", 18)}<span class="num">${b.flags}</span>
+             <span class="attn-text">${b.flags === 1 ? "issue" : "issues"} to review</span></span>
+             ${issuePreview(b.issues.map(i => ({ ...i, door_id: b.door_id })))}</span>`
+        : `<span class="attn green">${icon("check", 18)}<span class="attn-text">No issues</span></span>`}</td>
     </tr>`).join("");
 
   $("page").innerHTML = `
     <div class="cards">
-      ${card("Buses en route", enRoute)}
-      ${card("Students aboard", total("on_bus"))}
-      ${card("Dropped off", total("off_bus"))}
-      ${card("Needs attention", total("flags"), true)}
+      ${iconCard("bus", enRoute ? "green" : "gray", "En route", enRoute)}
+      ${iconCard("check", "gray", "Route finished", finished)}
+      ${iconCard("clock", "gray", "Not started", notStarted)}
+      ${issues === 0 ? iconCard("check", "green", "All clear", 0)
+        // red if anyone was left on a bus, amber for the rest (same as the table column)
+        : iconCard("warn", leftOnBus ? "red" : "amber", "Needs attention", issues,
+                   issuePreview(allIssues, Infinity))}
     </div>
     <section class="panel">
       <div class="panel-head"><h2>Buses</h2><span class="count">${buses.length}</span>
         <span class="hint">Click a bus for its live passenger list</span></div>
       ${buses.length ? `<table>
-        <thead><tr><th>Bus</th><th>Aboard</th><th>Not boarded</th><th>Dropped off</th>
-                   <th>On roster</th><th>Needs attention</th></tr></thead>
+        <thead><tr><th>Bus</th><th>Boarding</th><th>Needs attention</th></tr></thead>
         <tbody>${rows}</tbody></table>`
       : `<div class="empty-state">No buses yet. Press Refresh roster, or tap a card on any reader.</div>`}
     </section>`;
@@ -388,6 +577,15 @@ async function showOverview() {
 // --------------------------------------------------------- page: bus ----
 
 let droppedOpen = false;   // is the "Dropped off" group expanded? (kept across redraws)
+let resolvedOpen = false;  // same for the "Resolved" group under Needs attention
+
+async function resolveIssue(key) {
+  const doorId = location.hash.slice("#bus/".length);
+  await fetch(`/bus/${doorId}/resolve`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key }),
+  });
+  refresh();
+}
 
 async function showBus(doorId) {
   const m = await getJSON(`/bus/${encodeURIComponent(doorId)}`);
@@ -398,30 +596,53 @@ async function showBus(doorId) {
   // Passenger rows, by group, plus the problems for "Needs attention".
   // The problems match the server's flag count: rejected scans, wrong-bus
   // riders, and (after the route ends) anyone who never tapped off.
-  const problems = [], aboard = [], waiting = [], off = [];
+  // Each problem has a key (same as the server's list_flags). Resolved ones
+  // go to `resolved` instead, shown in a collapsed group.
+  const problems = [], resolved = [], aboard = [], waiting = [], off = [];
+  // button / done: wording for the button and for the resolved row.
+  function issue(key, color, iconName, title, text, time, clipBtn,
+                 button = "Resolve", done = "Resolved") {
+    const at = m.resolved[key];
+    if (at) {
+      resolved.push(eventRow("gray", iconName, title, text, time,
+        `<span class="status"><span class="dot green"></span>${done} ${clock(at)}</span>${clipBtn}`));
+    } else {
+      problems.push(eventRow(color, iconName, title, text, time,
+        clipBtn + `<button class="pill-btn small" data-key="${esc(key)}" onclick="resolveIssue(this.dataset.key)">${button}</button>`));
+    }
+  }
+  const neverOff = (s, title) => issue(`never_off:${s.user_id}`, "red", "warn", "Never tapped off",
+    `${studentLink(s.user_id, s.name)} <span class="muted">was still on the bus when the route ended. Check the bus.</span>`,
+    s.on_at, viewClip(s.on_camera, s.on_at, title), "Mark as dropped off", "Marked dropped off");
   for (const s of m.on_bus) {
     const st = s.wrong_bus ? "wrong_bus" : ended ? "left_on_bus" : "aboard";
     const title = `${s.name} · boarded ${m.name} · ${clock(s.on_at)}`;
     const sub = `On at ${clock(s.on_at)}` + (s.wrong_bus ? " · not on this bus's roster" : "");
     aboard.push(personRow(s.user_id, s.name, sub, st, clip(s.on_camera, s.on_at, title)));
     if (s.wrong_bus) {
-      problems.push(eventRow("red", "warn", "Wrong bus",
+      issue(`wrong_bus:${s.user_id}`, "red", "warn", "Wrong bus",
         `${studentLink(s.user_id, s.name)} <span class="muted">${ended ? "was still aboard at the end, and is" : "is aboard but"} not on this bus's roster</span>`,
-        s.on_at, viewClip(s.on_camera, s.on_at, title)));
+        s.on_at, viewClip(s.on_camera, s.on_at, title));
     } else if (ended) {
-      problems.push(eventRow("red", "warn", "Never tapped off",
-        `${studentLink(s.user_id, s.name)} <span class="muted">was still on the bus when the route ended. Check the bus.</span>`,
-        s.on_at, viewClip(s.on_camera, s.on_at, title)));
+      neverOff(s, title);
     }
   }
   for (const s of m.off_bus) {
+    if (s.marked_off) {
+      // Never tapped off; someone pressed "Mark as dropped off". Clip is the boarding scan.
+      const title = `${s.name} · boarded ${m.name} · ${clock(s.on_at)}`;
+      off.push(personRow(s.user_id, s.name, `On at ${clock(s.on_at)} · marked dropped off at ${clock(s.marked_off)}`,
+        "dropped_off", clip(s.on_camera, s.on_at, title)));
+      neverOff(s, title);
+      continue;
+    }
     const title = `${s.name} · got off ${m.name} · ${clock(s.last_tap)}`;
     off.push(personRow(s.user_id, s.name, `On at ${clock(s.on_at)} · off at ${clock(s.last_tap)}`,
       s.wrong_bus ? "wrong_bus" : "dropped_off", clip(s.last_camera, s.last_tap, title)));
     if (s.wrong_bus) {
-      problems.push(eventRow("red", "warn", "Wrong bus",
+      issue(`wrong_bus:${s.user_id}`, "red", "warn", "Wrong bus",
         `${studentLink(s.user_id, s.name)} <span class="muted">rode this bus but is not on its roster</span>`,
-        s.on_at, viewClip(s.on_camera, s.on_at, `${s.name} · boarded ${m.name} · ${clock(s.on_at)}`)));
+        s.on_at, viewClip(s.on_camera, s.on_at, `${s.name} · boarded ${m.name} · ${clock(s.on_at)}`));
     }
   }
   for (const s of m.not_boarded) {
@@ -434,11 +655,11 @@ async function showBus(doorId) {
     const clipBtn = viewClip(a.camera_id, a.time, `${who} · rejected at ${m.name} · ${clock(a.time)}`);
     if (a.user_id) {
       const where = a.assigned.length ? `assigned to ${esc(a.assigned.join(", "))}` : "not assigned to any bus";
-      problems.push(eventRow("amber", "card", "Card rejected",
-        `${studentLink(a.user_id, a.name)} <span class="muted">scanned here, ${where}</span>`, a.time, clipBtn));
+      issue(`alert:${a.event_id}`, "amber", "card", "Card rejected",
+        `${studentLink(a.user_id, a.name)} <span class="muted">scanned here, ${where}</span>`, a.time, clipBtn);
     } else {
-      problems.push(eventRow("amber", "card", "Unrecognized card",
-        `<b>Card ${esc(a.card)}</b> <span class="muted">is not linked to any student</span>`, a.time, clipBtn));
+      issue(`alert:${a.event_id}`, "amber", "card", "Unrecognized card",
+        `<b>Card ${esc(a.card)}</b> <span class="muted">is not linked to any student</span>`, a.time, clipBtn);
     }
   }
 
@@ -450,16 +671,46 @@ async function showBus(doorId) {
     <section class="panel">
       <div class="panel-head"><h2>Needs attention</h2><span class="count">${problems.length}</span></div>
       ${problems.length ? problems.join("")
-        : eventRow("green", "check", "All clear", `<span class="muted">No problems on this route.</span>`, null, "")}
+        : eventRow("green", "check", "All clear", `<span class="muted">No open problems on this route.</span>`, null, "")}
+      ${resolved.length ? `<details class="group-box" ${resolvedOpen ? "open" : ""} ontoggle="resolvedOpen = this.open">
+          <summary class="group">${icon("chev", 16)}Resolved<span class="count">${resolved.length}</span></summary>${resolved.join("")}
+        </details><div style="height:12px"></div>` : ""}
+    </section>`;
+
+  // Boarding progress: roster students who scanned on, out of the roster.
+  // Wrong-bus riders aren't on the roster, so they're left out of the bar.
+  const onRoster = s => !s.wrong_bus;
+  const nAboard = m.on_bus.filter(onRoster).length;
+  const nOff = m.off_bus.filter(onRoster).length;
+  const nWaiting = m.not_boarded.length;
+  const nTotal = nAboard + nOff + nWaiting;
+  const pct = n => nTotal ? (100 * n / nTotal) : 0;
+  const nWrong = m.on_bus.length + m.off_bus.length - nAboard - nOff;
+  // Label and number in one inner span: .status is a flex box, which drops the
+  // space before the number if they're separate items.
+  const legendItem = (color, label, n) => `<span class="status"><span class="dot ${color}"></span><span>${label} · <span class="num">${n}</span></span></span>`;
+  const progress = !m.route ? "" : `
+    <section class="panel progress">
+      <div class="progress-head">
+        <span class="progress-big num">${nAboard + nOff} of ${nTotal}</span><span class="muted">boarded</span>
+        <span class="pct num">${Math.round(pct(nAboard + nOff))}%</span>
+      </div>
+      ${progressBar(nOff, nAboard, nTotal, ended)}
+      <div class="legend">
+        ${legendItem("green", "Dropped off", nOff)}
+        ${legendItem(ended ? "red" : "blue", ended ? "Still on bus" : "Aboard", nAboard)}
+        ${legendItem("light", ended ? "No show" : "Not boarded yet", nWaiting)}
+        ${nWrong ? legendItem("amber", "Not on roster", nWrong) : ""}
+      </div>
     </section>`;
 
   const group = (iconName, label, rows) => rows.length
-    ? `<div class="group">${icon(iconName, 16)}${label} · ${rows.length}</div>${rows.join("")}` : "";
+    ? `<div class="group-box"><div class="group">${icon(iconName, 16)}${label}<span class="count">${rows.length}</span></div>${rows.join("")}</div>` : "";
 
   $("page").innerHTML = `
     <section class="panel head-panel">
       ${backButton("#", "All buses")}
-      <div class="bus-badge">${esc(busNumber(m.name))}</div>
+      <img class="bus-badge" src="/bus.png" alt="">
       <div class="head-text">
         <div class="head-title">${esc(m.name)}</div>
         <div class="status-line">
@@ -474,20 +725,15 @@ async function showBus(doorId) {
           : `<button class="pill-btn primary" onclick="routeAction('start')">Start route</button>`}
       </div>
     </section>
-    <div class="cards">
-      ${card(ended ? "Still on bus" : "Aboard now", m.on_bus.length, ended)}
-      ${card(ended ? "No show" : "Not boarded yet", m.not_boarded.length, ended)}
-      ${card("Dropped off", m.off_bus.length)}
-      ${card("Needs attention", m.flags, true)}
-    </div>
+    ${progress}
     ${attention}
     <section class="panel">
       <div class="panel-head"><h2>Passengers</h2>
         <span class="hint">Click a student for their history · camera for the scan clip</span></div>
       ${group("bus", ended ? "Still on bus" : "Aboard", aboard)}
       ${group("people", ended ? "No show" : "Not boarded yet", waiting)}
-      ${off.length ? `<details ${droppedOpen ? "open" : ""} ontoggle="droppedOpen = this.open">
-          <summary class="group">${icon("chev", 16)}Dropped off · ${off.length}</summary>${off.join("")}
+      ${off.length ? `<details class="group-box" ${droppedOpen ? "open" : ""} ontoggle="droppedOpen = this.open">
+          <summary class="group">${icon("chev", 16)}Dropped off<span class="count">${off.length}</span></summary>${off.join("")}
         </details>` : ""}
       ${aboard.length + waiting.length + off.length ? `<div style="height:12px"></div>`
         : `<div class="empty-state">No roster and no scans yet.</div>`}
@@ -519,19 +765,19 @@ async function showStudent(userId) {
   const rows = s.history.map(r => `
     <tr class="link" onclick="location.hash='bus/${encodeURIComponent(r.door_id)}'">
       <td>${day(r.route_started)}</td>
-      <td><div class="cell"><span class="bus-badge small">${esc(busNumber(r.bus_name))}</span>${esc(r.bus_name)}</div></td>
+      <td><div class="cell"><img class="bus-badge small" src="/bus.png" alt="">${esc(r.bus_name)}</div></td>
       <td>${amPm(r.route_started)}</td>
       <td class="num">${r.on ? clock(r.on) + clip(r.on_camera, r.on,
         `${s.name} · ${r.status === "rejected" ? "rejected at" : "boarded"} ${r.bus_name} · ${day(r.on)} ${clock(r.on)}`) : "—"}</td>
       <td class="num">${r.off ? clock(r.off) + clip(r.off_camera, r.off,
         `${s.name} · got off ${r.bus_name} · ${day(r.off)} ${clock(r.off)}`) : "—"}</td>
-      <td>${status(r.status)}</td>
+      <td>${status(r.status)}${r.resolved_at ? ` <span class="muted">· ${r.status === "dropped_off" ? "Marked" : "Resolved"} ${day(r.resolved_at)} ${clock(r.resolved_at)}</span>` : ""}</td>
     </tr>`).join("");
 
   $("page").innerHTML = `
     <section class="panel head-panel">
       ${backButton("#students", "All students")}
-      <div class="avatar big">${esc(initials(s.name))}</div>
+      ${avatar(s.user_id, s.name, "big")}
       <div class="head-text">
         <div class="head-title">${esc(s.name)}</div>
         <div class="status-line">
@@ -542,10 +788,10 @@ async function showStudent(userId) {
       </div>
     </section>
     <div class="cards">
-      ${card("Rides", rides)}
-      ${card("No shows", noShows, true)}
-      ${card("Flags", flags, true)}
-      ${card("Routes on record", s.history.length)}
+      ${iconCard("bus", rides ? "green" : "gray", "Rides", rides)}
+      ${iconCard("close", noShows ? "red" : "gray", "No shows", noShows)}
+      ${iconCard("warn", flags ? "red" : "gray", "Flags", flags)}
+      ${iconCard("list", "gray", "Entries", s.history.length)}
     </div>
     <section class="panel">
       <div class="panel-head"><h2>Ridership history</h2><span class="count">${s.history.length}</span>
@@ -569,7 +815,7 @@ function showStudents() {
   const list = matching($("search").value);
   const rows = list.map(s => `
     <tr class="link" onclick="location.hash='student/${encodeURIComponent(s.user_id)}'">
-      <td><div class="cell"><div class="avatar small">${esc(initials(s.name))}</div><span class="strong">${esc(s.name)}</span></div></td>
+      <td><div class="cell">${avatar(s.user_id, s.name, "small")}<span class="strong">${esc(s.name)}</span></div></td>
       <td>${s.buses.length ? esc(s.buses.join(", ")) : `<span class="muted">Not assigned</span>`}</td>
     </tr>`).join("");
   $("page").innerHTML = `
@@ -595,7 +841,7 @@ function drawSearchResults() {
     ? hits.map((s, i) => `
         <a href="#student/${encodeURIComponent(s.user_id)}" class="${i === searchPick ? "active" : ""}"
            onmousedown="event.preventDefault(); openStudent('${encodeURIComponent(s.user_id)}')">
-          <div class="avatar small">${esc(initials(s.name))}</div>
+          ${avatar(s.user_id, s.name, "small")}
           <div><div>${esc(s.name)}</div><div class="sub">${esc(s.buses.join(", ") || "Not assigned")}</div></div>
         </a>`).join("")
     : `<div class="empty sub">No students match “${esc(query)}”</div>`;
@@ -717,10 +963,13 @@ document.addEventListener("keydown", e => { if (e.key === "Escape") closeClip();
 // ---------------------------------------------------- roster refresh ----
 
 async function refreshRoster() {
-  $("roster-status").textContent = "Refreshing roster…";
+  $("roster-status").innerHTML = `Refreshing roster<span class="loading-dots"><span>.</span><span>.</span><span>.</span></span>`;
   const r = await fetch("/roster/refresh", { method: "POST" });
   const body = await r.json();
-  $("roster-status").textContent = r.ok ? `Loaded ${body.buses} doors from Command` : `Failed: ${body.error}`;
+  $("roster-status").textContent = !r.ok ? `Failed: ${body.error}`
+    : body.photo_error ? `Loaded ${body.buses} doors from Command · photos failed: ${body.photo_error}`
+    : `Loaded ${body.buses} doors and ${body.photos} photos from Command`;
+  await loadPhotos();
   refresh();
 }
 
@@ -744,8 +993,12 @@ async function refresh() {
 }
 
 window.onhashchange = () => { window.scrollTo(0, 0); droppedOpen = false; refresh(); };
-refresh();
-setInterval(refresh, 2000);
+loadPhotos().then(refresh);
+// Skip a redraw while the mouse is on a bar or an issue preview, so the
+// hover label doesn't blink away every 2 s.
+setInterval(() => {
+  if (!document.querySelector(".bar:hover, .attn-wrap:hover, .has-preview:hover")) refresh();
+}, 2000);
 </script>
 </body>
 </html>

@@ -20,6 +20,9 @@ tools/verkada-probe/captures/
 state.json
 state.tmp
 
+# Profile photos from the test org. Never commit.
+photos/
+
 # Python
 .venv/
 __pycache__/

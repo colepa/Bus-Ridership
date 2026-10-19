@@ -8,6 +8,12 @@ With the app running on port 8000:
     uv run python simulate.py board --seconds 20          # faster (default 90)
     uv run python simulate.py history                     # 10 school days of past routes
     uv run python simulate.py history --days 20
+    uv run python simulate.py stages                      # buses 2-4 at different points
+
+stages:  starts a route on each bus and puts it at a different point right
+         away: boarding (half the roster on), halfway (most on, half of
+         those dropped off), almost done (most on, 85% dropped off). Default
+         buses are fake-bus-2, -3, -4; or name up to three door_ids.
 
 board:   starts the route (the previous one goes to history), then over
          --seconds taps on ~90% of each roster in random order. The rest stay
@@ -64,6 +70,36 @@ def plan_dropoff(door_id, seconds):
     if on_bus:
         print(f"{door_id}: {len(leaving)} tap off, {on_bus[0]['name']} stays on")
     return [(random.uniform(0, seconds), door_id, s["user_id"], s["name"], None) for s in leaving]
+
+
+# stage name -> (share of roster that boarded, share of those already dropped off)
+STAGES = {
+    "boarding":    (0.5, 0.0),
+    "halfway":     (0.9, 0.5),
+    "almost done": (0.9, 0.85),
+}
+
+
+def make_stages(door_ids):
+    """Put each bus at a different point in its route, right now."""
+    ons, offs = [], []
+    for door_id, stage in zip(door_ids, STAGES):
+        boarded_share, off_share = STAGES[stage]
+        httpx.post(f"{APP}/bus/{door_id}/route/start").raise_for_status()
+        roster = httpx.get(f"{APP}/bus/{door_id}").json()["not_boarded"]
+        riders = random.sample(roster, round(len(roster) * boarded_share))
+        leaving = riders[:round(len(riders) * off_share)]
+        ons += [(door_id, s) for s in riders]
+        offs += [(door_id, s) for s in leaving]
+        print(f"{door_id}: {stage} - {len(riders)} of {len(roster)} on, {len(leaving)} off")
+
+    for door_id, s in ons:
+        send_tap(s["user_id"], s["name"], door_id)
+    if offs:
+        time.sleep(4)   # past the app's 3 s debounce, so the second tap counts as "off"
+        for door_id, s in offs:
+            send_tap(s["user_id"], s["name"], door_id)
+    print("Done.")
 
 
 def at(day, hour, minute):
@@ -148,10 +184,13 @@ def main():
     args = sys.argv[1:]
     seconds = float(pop_flag(args, "--seconds", "90"))
     days = int(pop_flag(args, "--days", "10"))
-    if not args or args[0] not in ("board", "dropoff", "history"):
+    if not args or args[0] not in ("board", "dropoff", "history", "stages"):
         print(__doc__)
         sys.exit(1)
     mode, door_ids = args[0], args[1:]
+    if mode == "stages":
+        make_stages(door_ids or ["fake-bus-2", "fake-bus-3", "fake-bus-4"])
+        return
     if not door_ids:
         door_ids = [b["door_id"] for b in httpx.get(f"{APP}/buses").json()]
 
