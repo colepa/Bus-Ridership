@@ -17,7 +17,8 @@ import time
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request
+import httpx
+from fastapi import BackgroundTasks, FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 
 HERE = Path(__file__).resolve().parent
@@ -33,6 +34,11 @@ DEBOUNCE_SECONDS = 3       # a second tap by the same student within this is ign
 MAX_SIGNATURE_AGE = 60      # seconds; matches Verkada's own sample
 BOARDING_EVENTS = {"door_keycard_entered_accepted"}
 REJECTED_EVENTS = {"door_keycard_entered_rejected"}
+
+# Parent texts. Off unless SMS_ENABLED=true in .env; when off, the text is printed instead.
+# parents.json = {"<user_id>": "+15551234567"} — only these students get texts (gitignored).
+SMS_ENABLED = os.environ.get("SMS_ENABLED", "").lower() == "true"
+PARENTS_FILE = HERE / "parents.json"
 
 
 # ---------------------------------------------------------------- state ----
@@ -300,6 +306,49 @@ def all_students():
     return students
 
 
+# ---------------------------------------------------------- parent SMS ----
+
+def parent_phone(user_id):
+    """The phone number to text for this student, or None. Re-read every time,
+    so edits to parents.json apply without a restart."""
+    if not PARENTS_FILE.exists():
+        return None
+    return json.loads(PARENTS_FILE.read_text()).get(user_id)
+
+
+def tap_text(bus, event_id, user_id):
+    """The parent text for this tap, e.g. "Ava Smith got on Bus 1 at 7:42 AM.",
+    or None if the tap doesn't count (a debounced double tap)."""
+    counted = counted_taps(bus["taps"]).get(user_id, [])
+    position = next((i for i, t in enumerate(counted, 1) if t is bus["taps"][event_id]), None)
+    if position is None:
+        return None
+    on_or_off = "on" if position % 2 == 1 else "off"
+    name = bus["roster"].get(user_id) or bus["taps"][event_id]["name"]
+    at = time.strftime("%-I:%M %p", time.localtime(bus["taps"][event_id]["time"]))
+    return f"{name} got {on_or_off} {bus['name']} at {at}."
+
+
+async def send_sms(to, body):
+    """Send one text through Twilio. Runs after the webhook has replied, so a
+    slow or failed send never delays or breaks a tap."""
+    if not SMS_ENABLED:
+        print(f"[sms off] to {to}: {body}")
+        return
+    sid = os.environ["TWILIO_ACCOUNT_SID"]
+    url = f"https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json"
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.post(url, auth=(sid, os.environ["TWILIO_AUTH_TOKEN"]),
+                                  data={"To": to, "From": os.environ["TWILIO_FROM"], "Body": body})
+        if r.status_code >= 300:
+            print(f"[sms] Twilio said {r.status_code}: {r.text}")
+        else:
+            print(f"[sms] sent to {to}: {body}")
+    except Exception as e:
+        print(f"[sms] failed: {e}")
+
+
 # ------------------------------------------------------------- webhook ----
 
 def signature_ok(raw_body, header):
@@ -317,7 +366,7 @@ app = FastAPI()
 
 
 @app.post("/webhook")
-async def webhook(request: Request):
+async def webhook(request: Request, background: BackgroundTasks):
     raw = await request.body()
     if not signature_ok(raw, request.headers.get("verkada-signature")):
         return JSONResponse({"error": "bad signature"}, status_code=403)
@@ -384,6 +433,7 @@ async def webhook(request: Request):
     # Accepted tap. Keyed by event_id, so the same tap delivered twice only counts once.
     if not user.get("user_id"):
         return {"ok": True, "ignored": "accepted tap with no user_id"}
+    already_seen = data["event_id"] in bus["taps"]   # Verkada retried; don't text twice
     bus["taps"][data["event_id"]] = {
         "user_id": user["user_id"],
         "name": user.get("name") or "(no name)",
@@ -392,6 +442,11 @@ async def webhook(request: Request):
     }
     save_state()
     print(f"[tap] {bus['name']}: user_id={user['user_id']} time={tap_time}")
+
+    phone = parent_phone(user["user_id"])
+    text = tap_text(bus, data["event_id"], user["user_id"])
+    if phone and text and not already_seen:
+        background.add_task(send_sms, phone, text)
     return {"ok": True}
 
 

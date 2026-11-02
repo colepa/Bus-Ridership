@@ -244,7 +244,20 @@
                  box-shadow: 0 20px 60px rgba(0,0,0,.3); }
   .player-card .panel-head { padding: 14px 16px 14px 24px; }
   .player-card .round-btn { width: 38px; height: 38px; margin-left: auto; }
+  #player-title .sub { display: flex; align-items: center; gap: 5px; margin-top: 3px; }
+  #player-title .status { font-size: 14px; }
+  #player-title .name-row { display: flex; align-items: baseline; gap: 12px; }
+  #player-title .when { display: inline-flex; align-items: center; gap: 4px; margin-top: 0; align-self: center; }  #player-title .status.green { color: var(--green); } #player-title .status.red { color: var(--red); }
   .player-card video { display: block; width: 100%; aspect-ratio: 16 / 9; background: #000; }
+  /* no camera on this bus: a small message card instead of the player */
+  .player-card.no-clip { width: min(520px, 100%); }
+  .player-card.no-clip video, .player-card.no-clip .player-foot { display: none; }
+  .player-card:not(.no-clip) .no-footage { display: none; }
+  .no-footage { display: flex; flex-direction: column; align-items: center; text-align: center;
+                gap: 6px; padding: 12px 32px 32px; }
+  .no-footage .event-icon { width: 64px; height: 64px; margin-bottom: 10px; }
+  .no-footage b { font-size: 16px; font-weight: 600; }
+  .no-footage .sub { max-width: 300px; line-height: 1.45; }
   .player-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 24px; }
 
   /* narrow windows (laptop split screen, tablet) */
@@ -350,11 +363,16 @@
 <div id="player" class="overlay" hidden onclick="if (event.target === this) closeClip()">
   <div class="player-card">
     <div class="panel-head">
-      <h2 id="player-title"></h2>
+      <div id="player-title"></div>
       <button class="round-btn" title="Close" onclick="closeClip()">
         <svg width="18" height="18"><use href="#i-close"/></svg></button>
     </div>
     <video id="player-video" muted loop playsinline controls></video>
+    <div class="no-footage">
+      <div class="event-icon gray"><svg width="30" height="30"><use href="#i-nocamera"/></svg></div>
+      <b>No footage attached</b>
+      <span class="sub">This bus has no camera linked to its door in Command, so there's no clip for this scan.</span>
+    </div>
     <div class="player-foot">
       <span id="player-status" class="sub"></span>
       <a id="player-command" class="pill-btn small" target="_blank">Open in Command ↗</a>
@@ -455,6 +473,14 @@ function backButton(hash, title) {
 
 // Clip icon: opens the clip player at the scan. Crossed-out camera when
 // there's no camera for that bus.
+// Clip pop-up title: name on top, then "● Boarded · Bus 3 · 7:42 AM".
+// event is a key of CLIP_EVENTS; when is the time text.
+function clipTitle(name, event, bus, when) { return {name, event, bus, when}; }
+const CLIP_EVENTS = {
+  boarded:  ["Boarded", "green"],
+  got_off:  ["Got off", "green"],
+  rejected: ["Rejected", "red"],
+};
 function clip(cameraId, time, title) {
   if (!cameraId || !time) return `<span class="clip none" title="No clip">${icon("nocamera")}</span>`;
   return clipLink(cameraId, time, title, icon("camera"));
@@ -463,7 +489,7 @@ function clip(cameraId, time, title) {
 // ("clip clicks"), using these data- attributes.
 function clipLink(cameraId, time, title, inner, cls = "clip") {
   return `<a class="${cls}" href="#" title="Play clip" data-camera="${esc(cameraId)}"
-             data-at="${time}" data-title="${esc(title)}">${inner}</a>`;
+             data-at="${time}" data-title="${esc(JSON.stringify(title))}">${inner}</a>`;
 }
 
 // One student row in the passenger list.
@@ -485,8 +511,10 @@ function eventRow(color, iconName, title, text, time, clipHtml) {
     ${time ? `<span class="event-time">${clock(time)}</span>` : ""}${clipHtml}
   </div>`;
 }
+// Always shown, even with no camera, so every issue row looks the same.
+// With no camera, the player opens with a "no footage" message (openClip).
 function viewClip(cameraId, time, title) {
-  return cameraId ? clipLink(cameraId, time, title, `${icon("camera", 18)}View clip`, "pill-btn small") : "";
+  return clipLink(cameraId || "", time, title, `${icon("camera", 18)}View clip`, "pill-btn small");
 }
 function studentLink(userId, name) {
   return `<a class="name" href="#student/${encodeURIComponent(userId)}">${esc(name)}</a>`;
@@ -616,7 +644,7 @@ async function showBus(doorId) {
     s.on_at, viewClip(s.on_camera, s.on_at, title), "Mark as dropped off", "Marked dropped off");
   for (const s of m.on_bus) {
     const st = s.wrong_bus ? "wrong_bus" : ended ? "left_on_bus" : "aboard";
-    const title = `${s.name} · boarded ${m.name} · ${clock(s.on_at)}`;
+    const title = clipTitle(s.name, "boarded", m.name, clock(s.on_at));
     const sub = `On at ${clock(s.on_at)}` + (s.wrong_bus ? " · not on this bus's roster" : "");
     aboard.push(personRow(s.user_id, s.name, sub, st, clip(s.on_camera, s.on_at, title)));
     if (s.wrong_bus) {
@@ -630,19 +658,19 @@ async function showBus(doorId) {
   for (const s of m.off_bus) {
     if (s.marked_off) {
       // Never tapped off; someone pressed "Mark as dropped off". Clip is the boarding scan.
-      const title = `${s.name} · boarded ${m.name} · ${clock(s.on_at)}`;
+      const title = clipTitle(s.name, "boarded", m.name, clock(s.on_at));
       off.push(personRow(s.user_id, s.name, `On at ${clock(s.on_at)} · marked dropped off at ${clock(s.marked_off)}`,
         "dropped_off", clip(s.on_camera, s.on_at, title)));
       neverOff(s, title);
       continue;
     }
-    const title = `${s.name} · got off ${m.name} · ${clock(s.last_tap)}`;
+    const title = clipTitle(s.name, "got_off", m.name, clock(s.last_tap));
     off.push(personRow(s.user_id, s.name, `On at ${clock(s.on_at)} · off at ${clock(s.last_tap)}`,
       s.wrong_bus ? "wrong_bus" : "dropped_off", clip(s.last_camera, s.last_tap, title)));
     if (s.wrong_bus) {
       issue(`wrong_bus:${s.user_id}`, "red", "warn", "Wrong bus",
         `${studentLink(s.user_id, s.name)} <span class="muted">rode this bus but is not on its roster</span>`,
-        s.on_at, viewClip(s.on_camera, s.on_at, `${s.name} · boarded ${m.name} · ${clock(s.on_at)}`));
+        s.on_at, viewClip(s.on_camera, s.on_at, clipTitle(s.name, "boarded", m.name, clock(s.on_at))));
     }
   }
   for (const s of m.not_boarded) {
@@ -652,7 +680,7 @@ async function showBus(doorId) {
   // Rejected scans (newest first from the server).
   for (const a of m.alerts) {
     const who = a.user_id ? a.name : `Card ${a.card}`;
-    const clipBtn = viewClip(a.camera_id, a.time, `${who} · rejected at ${m.name} · ${clock(a.time)}`);
+    const clipBtn = viewClip(a.camera_id, a.time, clipTitle(who, "rejected", m.name, clock(a.time)));
     if (a.user_id) {
       const where = a.assigned.length ? `assigned to ${esc(a.assigned.join(", "))}` : "not assigned to any bus";
       issue(`alert:${a.event_id}`, "amber", "card", "Card rejected",
@@ -768,9 +796,9 @@ async function showStudent(userId) {
       <td><div class="cell"><img class="bus-badge small" src="/bus.png" alt="">${esc(r.bus_name)}</div></td>
       <td>${amPm(r.route_started)}</td>
       <td class="num">${r.on ? clock(r.on) + clip(r.on_camera, r.on,
-        `${s.name} · ${r.status === "rejected" ? "rejected at" : "boarded"} ${r.bus_name} · ${day(r.on)} ${clock(r.on)}`) : "—"}</td>
+        clipTitle(s.name, r.status === "rejected" ? "rejected" : "boarded", r.bus_name, `${day(r.on)} ${clock(r.on)}`)) : "—"}</td>
       <td class="num">${r.off ? clock(r.off) + clip(r.off_camera, r.off,
-        `${s.name} · got off ${r.bus_name} · ${day(r.off)} ${clock(r.off)}`) : "—"}</td>
+        clipTitle(s.name, "got_off", r.bus_name, `${day(r.off)} ${clock(r.off)}`)) : "—"}</td>
       <td>${status(r.status)}${r.resolved_at ? ` <span class="muted">· ${r.status === "dropped_off" ? "Marked" : "Resolved"} ${day(r.resolved_at)} ${clock(r.resolved_at)}</span>` : ""}</td>
     </tr>`).join("");
 
@@ -889,7 +917,14 @@ async function openClip(cameraId, at, title) {
   closeClip();
   const mine = clipNumber;
   $("player").hidden = false;
-  $("player-title").textContent = title;
+  const [label, color] = CLIP_EVENTS[title.event];
+  $("player-title").innerHTML = `<div class="name-row"><h2>${esc(title.name)}</h2>
+      <span class="sub when">${icon("clock", 15)}${esc(title.when)}</span></div>
+    <div class="sub"><span class="status ${color}"><span class="dot ${color}"></span>${label}</span>
+      · ${esc(title.bus)}</div>`;
+  // No camera linked to this bus: show the "No footage attached" card instead.
+  $("player").querySelector(".player-card").classList.toggle("no-clip", !cameraId);
+  if (!cameraId) return;
   $("player-command").href = `/clip?camera_id=${encodeURIComponent(cameraId)}&at=${at}`;
   clipStatus("Loading clip…");
 
@@ -955,7 +990,7 @@ document.addEventListener("click", e => {
   if (!link) return;
   e.preventDefault();
   e.stopPropagation();
-  openClip(link.dataset.camera, Number(link.dataset.at), link.dataset.title);
+  openClip(link.dataset.camera, Number(link.dataset.at), JSON.parse(link.dataset.title));
 }, true);
 
 document.addEventListener("keydown", e => { if (e.key === "Escape") closeClip(); });

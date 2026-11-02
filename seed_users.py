@@ -1,14 +1,16 @@
-"""Add fake test students to Command so the real bus has a realistic roster.
+"""Add fake test students to Command so the real buses have realistic rosters.
 
-Creates COUNT users and adds each to the access group that opens the bus's door,
-so "Refresh roster" picks them up. Every user gets an external_id starting with
-"busdemo-", which is how --delete finds them again. No cards are assigned: they
-can't tap the real reader, only fake taps (fake_tap.py / simulate.py).
+Creates the bus's users and adds each to the access group that opens the bus's
+door, so "Refresh roster" picks them up. Each bus has its own external_id
+prefix (see BUSES), which is how --delete finds them again. No cards are
+assigned: they can't tap the real reader, only fake taps (fake_tap.py /
+simulate.py).
 
 Usage:
-    uv run python seed_users.py                 # add 49 users (+ your existing one = 50)
-    uv run python seed_users.py --delete        # remove every busdemo- user
-    uv run python seed_users.py --group <group_id>   # if the door has several groups
+    uv run python seed_users.py                  # bus 1: add 49 users (+ your existing one = 50)
+    uv run python seed_users.py --bus 2          # bus 2: add 45 users
+    uv run python seed_users.py --bus 2 --delete # remove bus 2's users
+    uv run python seed_users.py --bus 2 --group <group_id>   # if the door has several groups
 
 Needs VERKADA_API_KEY with read/write on Core Command and Door Access Management.
 Safe to run twice: users that already exist are just re-added to the group.
@@ -26,8 +28,12 @@ load_dotenv(Path(__file__).resolve().parent / ".env")
 
 from verkada_api import BASE, api_get, get_token  # after load_dotenv, for VERKADA_REGION
 
-COUNT = 49
-PREFIX = "busdemo-"
+# The real buses (doors in Command). Bus 1's settings are what the script always
+# used, so re-running it for bus 1 finds the same users.
+BUSES = {
+    "1": {"door_id": "bb2c0f6d-5312-4f60-a9de-fabf42eba821", "prefix": "busdemo-", "count": 49},
+    "2": {"door_id": "926c02da-02c7-473e-8b9d-99ac3d66fcc3", "prefix": "busdemo2-", "count": 45},
+}
 
 FIRST = ["Ava", "Liam", "Mia", "Noah", "Zoe", "Eli", "Ruby", "Owen", "Ivy", "Leo",
          "Nora", "Finn", "Maya", "Jude", "Lila", "Cole", "Hazel", "Miles", "Iris", "Theo",
@@ -37,11 +43,16 @@ LAST = ["Alder", "Birch", "Cedar", "Dunmore", "Ellery", "Fairway", "Glenn", "Hol
         "Quill", "Rowan", "Sable", "Thorne", "Underhill", "Vale", "Whitlock", "Yarrow"]
 
 
-def fake_names(count):
-    """Same names every run (fixed seed), so re-running doesn't make new people."""
-    rng = random.Random(7)
+def fake_names(bus):
+    """Same names every run (fixed seed), so re-running doesn't make new people.
+    Goes through the buses in order and removes each bus's names before picking
+    the next bus's, so no two buses share a student name."""
     pairs = [(f, l) for f in FIRST for l in LAST]
-    return rng.sample(pairs, count)
+    for key, info in BUSES.items():
+        names = random.Random(7).sample(pairs, info["count"])
+        if key == bus:
+            return names
+        pairs = [p for p in pairs if p not in names]
 
 
 def call(method, token, path, params=None, body=None):
@@ -51,28 +62,35 @@ def call(method, token, path, params=None, body=None):
     return r
 
 
-def find_group(token):
-    """The one access group that opens the one door. Exits with a hint otherwise."""
-    doors = api_get(token, "/access/v1/doors").get("doors", [])
-    if len(doors) != 1:
-        sys.exit(f"Found {len(doors)} doors; this script assumes one. Pass --group <group_id>.")
-    door = doors[0]
-    door_id = door.get("door_id") or door.get("doorId") or door.get("id")
-
+def find_group(token, door_id):
+    """The one access group that opens this door. Exits with a hint otherwise."""
+    levels = api_get(token, "/access/v1/door/access_level").get("access_levels", [])
     groups = set()
-    for level in api_get(token, "/access/v1/door/access_level").get("access_levels", []):
+    for level in levels:
         if door_id in level.get("doors", []):
             groups.update(level.get("access_groups", []))
     if len(groups) != 1:
-        sys.exit(f"Door '{door.get('name')}' has {len(groups)} access groups: {sorted(groups)}\n"
-                 "Pass the one you want with --group <group_id>.")
-    print(f"Door '{door.get('name')}' -> group {next(iter(groups))}")
-    return groups.pop()
+        sys.exit(f"Door {door_id} has {len(groups)} access groups: {sorted(groups)}\n"
+                 "In Command, give this door its own access group + access level, "
+                 "or pass the one you want with --group <group_id>.")
+    group_id = groups.pop()
+
+    # A group that also opens another bus's door would put these students on both rosters.
+    other_doors = set()
+    for level in levels:
+        if group_id in level.get("access_groups", []):
+            other_doors.update(d for d in level.get("doors", []) if d != door_id)
+    if other_doors:
+        sys.exit(f"Group {group_id} also opens {sorted(other_doors)}, so these students "
+                 "would show up on that bus too. Give this door its own group in Command.")
+    print(f"Door {door_id} -> group {group_id}")
+    return group_id
 
 
-def add_users(token, group_id):
-    for i, (first, last) in enumerate(fake_names(COUNT), start=1):
-        external_id = f"{PREFIX}{i:02d}"
+def add_users(token, bus, group_id):
+    prefix = BUSES[bus]["prefix"]
+    for i, (first, last) in enumerate(fake_names(bus), start=1):
+        external_id = f"{prefix}{i:02d}"
         r = call("POST", token, "/core/v1/user",
                  body={"external_id": external_id, "first_name": first, "last_name": last})
         if r.status_code == 409:
@@ -90,9 +108,10 @@ def add_users(token, group_id):
     print(f"Done. Press 'Refresh roster' on the page.")
 
 
-def delete_users(token):
-    for i in range(1, COUNT + 1):
-        external_id = f"{PREFIX}{i:02d}"
+def delete_users(token, bus):
+    prefix = BUSES[bus]["prefix"]
+    for i in range(1, BUSES[bus]["count"] + 1):
+        external_id = f"{prefix}{i:02d}"
         r = call("DELETE", token, "/core/v1/user", params={"external_id": external_id})
         print(f"  {external_id}: HTTP {r.status_code}")
     print("Done. Press 'Refresh roster' on the page.")
@@ -100,15 +119,18 @@ def delete_users(token):
 
 def main():
     args = sys.argv[1:]
+    bus = args[args.index("--bus") + 1] if "--bus" in args else "1"
+    if bus not in BUSES:
+        sys.exit(f"Unknown bus {bus}. Known: {', '.join(BUSES)}")
     token = get_token()
     if "--delete" in args:
-        delete_users(token)
+        delete_users(token, bus)
         return
     if "--group" in args:
         group_id = args[args.index("--group") + 1]
     else:
-        group_id = find_group(token)
-    add_users(token, group_id)
+        group_id = find_group(token, BUSES[bus]["door_id"])
+    add_users(token, bus, group_id)
 
 
 if __name__ == "__main__":

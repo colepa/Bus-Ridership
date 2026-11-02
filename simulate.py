@@ -3,17 +3,23 @@
 With the app running on port 8000:
 
     uv run python simulate.py board                       # every bus
-    uv run python simulate.py board fake-bus-2 fake-bus-3 # just these
+    uv run python simulate.py board fake-bus-5 fake-bus-3 # just these
     uv run python simulate.py dropoff                     # every bus
     uv run python simulate.py board --seconds 20          # faster (default 90)
     uv run python simulate.py history                     # 10 school days of past routes
     uv run python simulate.py history --days 20
-    uv run python simulate.py stages                      # buses 2-4 at different points
+    uv run python simulate.py stages                      # buses 3-5 at different points
+    uv run python simulate.py all                         # every state, over ~30 s
+
+all:     plays out every state on buses 3-5 (or three door_ids) over ~30 s.
+         Bus 3: mid-route, with a wrong-bus scan and an unknown card.
+         Bus 4: route ends with one student never tapped off; its unknown
+         card is resolved. Bus 5: still boarding. Doesn't touch history.
 
 stages:  starts a route on each bus and puts it at a different point right
          away: boarding (half the roster on), halfway (most on, half of
          those dropped off), almost done (most on, 85% dropped off). Default
-         buses are fake-bus-2, -3, -4; or name up to three door_ids.
+         buses are fake-bus-3, -4, -5; or name up to three door_ids.
 
 board:   starts the route (the previous one goes to history), then over
          --seconds taps on ~90% of each roster in random order. The rest stay
@@ -102,6 +108,66 @@ def make_stages(door_ids):
     print("Done.")
 
 
+def make_all(door_ids):
+    """Every state the page can show, played out over about 30 s on three buses:
+      bus A: mid-route - most on, half of those off, a wrong-bus scan, an unknown card
+      bus B: route ended - one student never tapped off, an unknown card (resolved)
+      bus C: still boarding - half the roster on so far
+    """
+    if len(door_ids) != 3:
+        sys.exit("all needs exactly three buses (default fake-bus-3 fake-bus-4 fake-bus-5)")
+    mid, done, early = door_ids
+    rosters = {}
+    for door_id in door_ids:
+        httpx.post(f"{APP}/bus/{door_id}/route/start").raise_for_status()
+        rosters[door_id] = httpx.get(f"{APP}/bus/{door_id}").json()["not_boarded"]
+
+    def taps(door_id, students, start, end, kind=None):
+        """One tap per student at a random moment between start and end seconds."""
+        return [(random.uniform(start, end), door_id, s["user_id"], s["name"], kind) for s in students]
+
+    # Taps on happen in 0-12 s, taps off in 16-28 s (past the app's 3 s debounce).
+    plan = []
+    stray = rosters[early].pop()   # a bus C student who scans on bus A instead
+
+    riders = random.sample(rosters[mid], round(len(rosters[mid]) * 0.9))
+    plan += taps(mid, riders, 0, 12)
+    plan += taps(mid, riders[:len(riders) // 2], 16, 28)
+    plan += taps(mid, [stray], 0, 12, REJECTED)
+    plan.append((random.uniform(0, 12), mid, "unknown", "", REJECTED))
+    print(f"{mid}: mid-route, {len(riders)} board, {len(riders) // 2} get off, "
+          f"{stray['name']} scans on the wrong bus, one unknown card")
+
+    riders = random.sample(rosters[done], round(len(rosters[done]) * 0.9))
+    plan += taps(done, riders, 0, 12)
+    plan += taps(done, riders[1:], 16, 28)
+    plan.append((random.uniform(0, 12), done, "unknown", "", REJECTED))
+    print(f"{done}: {len(riders)} board, all but {riders[0]['name']} get off, then the route ends")
+
+    riders = random.sample(rosters[early], len(rosters[early]) // 2)
+    plan += taps(early, riders, 0, 28)
+    print(f"{early}: still boarding, {len(riders)} of {len(rosters[early]) + 1} on")
+
+    play(plan)
+
+    # End bus B's route, then resolve its unknown card so the "Resolved" group shows too.
+    httpx.post(f"{APP}/bus/{done}/route/end").raise_for_status()
+    for alert in httpx.get(f"{APP}/bus/{done}").json()["alerts"]:
+        if alert["user_id"] is None:
+            httpx.post(f"{APP}/bus/{done}/resolve", json={"key": f"alert:{alert['event_id']}"})
+    print(f"{done}: route ended, unknown card resolved")
+
+
+def play(plan):
+    """Send every tap at its planned moment, all buses interleaved."""
+    start = time.time()
+    for delay, door_id, user_id, name, kind in sorted(plan):
+        time.sleep(max(0, start + delay - time.time()))
+        r = send_tap(user_id, name, door_id, kind or "door_keycard_entered_accepted")
+        label = "REJECTED " + (name or "card") if kind == REJECTED else name
+        print(f"  +{delay:5.1f}s  {door_id}  {label}  -> {r.status_code}")
+
+
 def at(day, hour, minute):
     """Epoch seconds for a local time on a given day."""
     return int(datetime(day.year, day.month, day.day, hour, minute).timestamp())
@@ -184,12 +250,16 @@ def main():
     args = sys.argv[1:]
     seconds = float(pop_flag(args, "--seconds", "90"))
     days = int(pop_flag(args, "--days", "10"))
-    if not args or args[0] not in ("board", "dropoff", "history", "stages"):
+    if not args or args[0] not in ("board", "dropoff", "history", "stages", "all"):
         print(__doc__)
         sys.exit(1)
     mode, door_ids = args[0], args[1:]
     if mode == "stages":
-        make_stages(door_ids or ["fake-bus-2", "fake-bus-3", "fake-bus-4"])
+        make_stages(door_ids or ["fake-bus-3", "fake-bus-4", "fake-bus-5"])
+        return
+    if mode == "all":
+        make_all(door_ids or ["fake-bus-3", "fake-bus-4", "fake-bus-5"])
+        print("Done.")
         return
     if not door_ids:
         door_ids = [b["door_id"] for b in httpx.get(f"{APP}/buses").json()]
@@ -205,13 +275,7 @@ def main():
         else:
             plan += plan_dropoff(door_id, seconds)
 
-    # Send every tap at its planned moment, all buses interleaved.
-    start = time.time()
-    for delay, door_id, user_id, name, kind in sorted(plan):
-        time.sleep(max(0, start + delay - time.time()))
-        r = send_tap(user_id, name, door_id, kind or "door_keycard_entered_accepted")
-        label = "REJECTED card" if kind == REJECTED else name
-        print(f"  +{delay:5.1f}s  {door_id}  {label}  -> {r.status_code}")
+    play(plan)
     print("Done.")
 
 

@@ -5,8 +5,8 @@ Usage (with the app running on port 8000):
     uv run python fake_tap.py student-1 "Test Student One"
 
 Optional: --door <door_id> to tap on a different bus (default: fake-bus-1).
-    uv run python fake_tap.py fake-student-001 "Esme Reyes" --door fake-bus-2
-Buses 2-4 and their students are in fake_buses.json. For a whole route, use simulate.py.
+    uv run python fake_tap.py fake-student-001 "Esme Reyes" --door fake-bus-5
+Buses 3-5 and their students are in fake_buses.json. For a whole route, use simulate.py.
 Use a real door_id (from the page URL after clicking a bus) to tap on that bus.
 
 Optional: --type <notification_type> to send something other than an accepted tap.

@@ -25,7 +25,7 @@ Obvious beats clever. As few files as the problem allows.
 4. One page showing the live manifest
 
 **Not in the MVP:** GPS (no API exists for it) · video clips · database or
-migrations (a dict plus a JSON file is fine) · auth · parent notifications ·
+migrations (a dict plus a JSON file is fine) · auth · parent notifications beyond the SMS demo ·
 Docker or CI · exhaustive tests · abstractions for things with one
 implementation.
 
@@ -80,9 +80,11 @@ github.com/colepa/Bus-Ridership.
   event rows) from `mockups/manifest-mockup.html` (static, not served)
 - `fake_tap.py` — signed fake taps (`--door`, `--type`, `unknown` user)
 - `simulate.py` — plays out a route (`board` / `dropoff`) with fake taps
-- `fake_buses.json` — buses 2–4, made up, not in Command; loaded at startup
-- `seed_users.py` — adds 49 `busdemo-` test users to Bus 1's group in
-  Command (`--delete` removes them)
+- `fake_buses.json` — buses 3–5 (`fake-bus-3/4/5`), made up, not in Command; loaded at startup.
+  Bus 5 was the old fake Bus 2 (renamed 2026-10-21).
+- `seed_users.py` — adds test users to a real bus's group in Command: Bus 1 =
+  49 `busdemo-`, Bus 2 = 45 `busdemo2-` (`--bus 2`; `--delete` removes them).
+  Names never repeat across buses.
 - `tools/verkada-probe/` — the original capture scripts (webhook + `GET /v2/events`)
 
 **Decisions made (details in `verkada-notes.md`)**
@@ -136,6 +138,15 @@ github.com/colepa/Bus-Ridership.
   404 = none) to `photos/<user_id>.jpg` (gitignored). Page loads `/photos`
   and shows the photo, or initials if none. A photo failure doesn't undo the
   roster. Not yet verified on real hardware.
+- Parent SMS (2026-11-02, step 1 of 2): each counted accepted tap texts
+  "<name> got on/off <bus> at 7:42 AM." to the number in `parents.json`
+  (`{user_id: "+1..."}`, gitignored; only listed students get texts). Sent
+  through Twilio's REST API with httpx, after the webhook replies (FastAPI
+  BackgroundTasks). Debounced and retried taps don't text. `SMS_ENABLED=false`
+  in `.env` just prints the text. No Twilio account yet → plan is trial account,
+  texting only Cole's verified phone. Step 2 (not started): GIF of the clip by
+  MMS: wait ~60 s, ffmpeg the 10 s clip to a small GIF, serve it at a random
+  path over ngrok for Twilio to fetch, then delete it.
 - Backfill dropped from scope — testing is stationary with good connectivity.
 
 **How to run**
