@@ -78,6 +78,9 @@ github.com/colepa/Bus-Ridership.
 - `index.html` — overview of all buses; click one for its manifest. Styled
   after Command (icon rail, pill buttons, dot+text status, "Needs attention"
   event rows) from `mockups/manifest-mockup.html` (static, not served)
+- `driver.html` — driver portal for the bus's iPad, at `/driver` (pick a bus) →
+  `/driver/<door_id>`. Same server and state as the manager page; uses only
+  `/driver/...` endpoints (+ `/photo`), so a sign-in can split roles later.
 - `fake_tap.py` — signed fake taps (`--door`, `--type`, `unknown` user)
 - `simulate.py` — plays out a route (`board` / `dropoff`) with fake taps
 - `fake_buses.json` — buses 3–5 (`fake-bus-3/4/5`), made up, not in Command; loaded at startup.
@@ -147,15 +150,34 @@ github.com/colepa/Bus-Ridership.
   texting only Cole's verified phone. Step 2 (not started): GIF of the clip by
   MMS: wait ~60 s, ffmpeg the 10 s clip to a small GIF, serve it at a random
   path over ngrok for Twilio to fetch, then delete it.
+- Driver portal (2026-11-05): one server, separate page (a second server
+  would need a second ngrok tunnel and proxy everything; role separation is an
+  auth job, later). Live updates by server-sent events (`/driver/<bus>/events`,
+  `notify()` in app.py), not polling: instant, ~1 ngrok request per page load;
+  30 s backup reload. Layout (simplified 2026-11-05): one page, no rail/tabs —
+  bus name + Live + headcount + route button, Issues, then every student A–Z
+  with a Board/Unboard button. Each counted scan shows a big photo + name for 2.5 s;
+  rejected / wrong bus stay red until OK. Driver can Board / Unboard (en route
+  only) and Dismiss / Mark as dropped off, each behind a confirm. Board/Unboard
+  = an extra tap `driver-<n>` with `"override": True` (skips debounce, so the
+  toggle logic does the rest); Dismiss = same `resolved` key as Resolve. Every
+  driver action goes in `bus["driver_log"]` with the bus camera and time; clip =
+  the moment the button was pressed. Manager page: "Driver overrides" panel
+  with clips, "Driver override" tag on passenger and student-history rows,
+  "Resolved by driver". Overrides don't text parents. Driver can Start/End route.
+  Not yet tested on the iPad over ngrok (check the ngrok warning page doesn't
+  block the events stream).
 - Backfill dropped from scope — testing is stationary with good connectivity.
 
 **How to run**
-1. `uv run uvicorn app:app --port 8000 --reload` (`--reload` picks up
-   `app.py` edits; `index.html` is re-read on every page load anyway)
+1. `uv run uvicorn app:app --port 8000 --reload --timeout-graceful-shutdown 2`
+   (`--reload` picks up `app.py` edits; `index.html` is re-read on every page
+   load anyway; the timeout stops a reload hanging on an open driver page)
 2. `ngrok http 8000 --url https://hatchery-tactical-moneyless.ngrok-free.dev`
    (permanent free domain; webhook in Command points at `<that>/webhook`)
 3. Open the dashboard at `http://localhost:8000`, **not** the ngrok URL —
    the 2 s polling would burn ngrok's 20k requests/month free cap.
+4. Driver iPad: `<ngrok URL>/driver`, pick the bus, Share → Add to Home Screen.
 
 **Not yet verified on real hardware**
 - "Refresh roster" against the live API. The docs don't name the door-id

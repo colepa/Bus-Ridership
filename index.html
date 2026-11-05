@@ -203,6 +203,7 @@
   td .cell { display: flex; align-items: center; gap: 14px; }
   td .strong { font-weight: 600; }
   .red-text { color: var(--red); font-weight: 600; }
+  .override { color: var(--amber); font-weight: 600; }   /* "Driver override" tag */
   /* overview "Needs attention" cell: warning sign + count, or a check */
   .attn { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
   .attn.amber { color: var(--amber); } .attn.green { color: var(--green); } .attn.red { color: var(--red); }
@@ -248,6 +249,7 @@
   #player-title .status { font-size: 14px; }
   #player-title .name-row { display: flex; align-items: baseline; gap: 12px; }
   #player-title .when { display: inline-flex; align-items: center; gap: 4px; margin-top: 0; align-self: center; }  #player-title .status.green { color: var(--green); } #player-title .status.red { color: var(--red); }
+  #player-title .status.amber { color: var(--amber); }
   .player-card video { display: block; width: 100%; aspect-ratio: 16 / 9; background: #000; }
   /* no camera on this bus: a small message card instead of the player */
   .player-card.no-clip { width: min(520px, 100%); }
@@ -480,7 +482,13 @@ const CLIP_EVENTS = {
   boarded:  ["Boarded", "green"],
   got_off:  ["Got off", "green"],
   rejected: ["Rejected", "red"],
+  // the moment the driver pressed a button on the driver page
+  driver_board:   ["Boarded by driver", "amber"],
+  driver_unboard: ["Unboarded by driver", "amber"],
+  driver_dismiss: ["Dismissed by driver", "amber"],
 };
+// Tag after a time that came from the driver page instead of a card.
+const OVERRIDE_TAG = ` · <span class="override">Driver override</span>`;
 function clip(cameraId, time, title) {
   if (!cameraId || !time) return `<span class="clip none" title="No clip">${icon("nocamera")}</span>`;
   return clipLink(cameraId, time, title, icon("camera"));
@@ -627,13 +635,16 @@ async function showBus(doorId) {
   // Each problem has a key (same as the server's list_flags). Resolved ones
   // go to `resolved` instead, shown in a collapsed group.
   const problems = [], resolved = [], aboard = [], waiting = [], off = [];
+  // Issues the driver dismissed on the driver page (the rest were resolved here).
+  const byDriver = new Set(m.driver_log.filter(d => d.action === "dismiss").map(d => d.key));
   // button / done: wording for the button and for the resolved row.
   function issue(key, color, iconName, title, text, time, clipBtn,
                  button = "Resolve", done = "Resolved") {
     const at = m.resolved[key];
     if (at) {
+      const by = byDriver.has(key) ? " by driver" : "";
       resolved.push(eventRow("gray", iconName, title, text, time,
-        `<span class="status"><span class="dot green"></span>${done} ${clock(at)}</span>${clipBtn}`));
+        `<span class="status"><span class="dot green"></span>${done}${by} ${clock(at)}</span>${clipBtn}`));
     } else {
       problems.push(eventRow(color, iconName, title, text, time,
         clipBtn + `<button class="pill-btn small" data-key="${esc(key)}" onclick="resolveIssue(this.dataset.key)">${button}</button>`));
@@ -645,7 +656,8 @@ async function showBus(doorId) {
   for (const s of m.on_bus) {
     const st = s.wrong_bus ? "wrong_bus" : ended ? "left_on_bus" : "aboard";
     const title = clipTitle(s.name, "boarded", m.name, clock(s.on_at));
-    const sub = `On at ${clock(s.on_at)}` + (s.wrong_bus ? " · not on this bus's roster" : "");
+    const sub = `On at ${clock(s.on_at)}` + (s.on_override || s.last_override ? OVERRIDE_TAG : "")
+      + (s.wrong_bus ? " · not on this bus's roster" : "");
     aboard.push(personRow(s.user_id, s.name, sub, st, clip(s.on_camera, s.on_at, title)));
     if (s.wrong_bus) {
       issue(`wrong_bus:${s.user_id}`, "red", "warn", "Wrong bus",
@@ -665,7 +677,8 @@ async function showBus(doorId) {
       continue;
     }
     const title = clipTitle(s.name, "got_off", m.name, clock(s.last_tap));
-    off.push(personRow(s.user_id, s.name, `On at ${clock(s.on_at)} · off at ${clock(s.last_tap)}`,
+    off.push(personRow(s.user_id, s.name, `On at ${clock(s.on_at)} · off at ${clock(s.last_tap)}`
+        + (s.on_override || s.last_override ? OVERRIDE_TAG : ""),
       s.wrong_bus ? "wrong_bus" : "dropped_off", clip(s.last_camera, s.last_tap, title)));
     if (s.wrong_bus) {
       issue(`wrong_bus:${s.user_id}`, "red", "warn", "Wrong bus",
@@ -703,6 +716,24 @@ async function showBus(doorId) {
       ${resolved.length ? `<details class="group-box" ${resolvedOpen ? "open" : ""} ontoggle="resolvedOpen = this.open">
           <summary class="group">${icon("chev", 16)}Resolved<span class="count">${resolved.length}</span></summary>${resolved.join("")}
         </details><div style="height:12px"></div>` : ""}
+    </section>`;
+
+  // Everything the driver did on the driver page, newest first, each with the
+  // clip from the bus camera at the moment they pressed the button.
+  const DRIVER_ACTIONS = { board: ["Boarded by driver", "people"], unboard: ["Unboarded by driver", "people"],
+                           dismiss: ["Dismissed by driver", "check"] };
+  const driverRows = [...m.driver_log].reverse().map(d => {
+    const [label, iconName] = DRIVER_ACTIONS[d.action];
+    const who = d.user_id ? studentLink(d.user_id, d.name) : `<b>${esc(d.name)}</b>`;
+    const text = d.action === "dismiss" ? `${who} <span class="muted">· ${esc(d.title)}</span>` : who;
+    return eventRow("amber", iconName, label, text, d.time,
+      viewClip(d.camera_id, d.time, clipTitle(d.name, `driver_${d.action}`, m.name, clock(d.time))));
+  });
+  const driverPanel = !driverRows.length ? "" : `
+    <section class="panel">
+      <div class="panel-head"><h2>Driver overrides</h2><span class="count">${driverRows.length}</span>
+        <span class="hint">Clip = the bus camera when the driver pressed the button</span></div>
+      ${driverRows.join("")}<div style="height:6px"></div>
     </section>`;
 
   // Boarding progress: roster students who scanned on, out of the roster.
@@ -755,6 +786,7 @@ async function showBus(doorId) {
     </section>
     ${progress}
     ${attention}
+    ${driverPanel}
     <section class="panel">
       <div class="panel-head"><h2>Passengers</h2>
         <span class="hint">Click a student for their history · camera for the scan clip</span></div>
@@ -795,9 +827,9 @@ async function showStudent(userId) {
       <td>${day(r.route_started)}</td>
       <td><div class="cell"><img class="bus-badge small" src="/bus.png" alt="">${esc(r.bus_name)}</div></td>
       <td>${amPm(r.route_started)}</td>
-      <td class="num">${r.on ? clock(r.on) + clip(r.on_camera, r.on,
+      <td class="num">${r.on ? clock(r.on) + (r.on_override ? OVERRIDE_TAG : "") + clip(r.on_camera, r.on,
         clipTitle(s.name, r.status === "rejected" ? "rejected" : "boarded", r.bus_name, `${day(r.on)} ${clock(r.on)}`)) : "—"}</td>
-      <td class="num">${r.off ? clock(r.off) + clip(r.off_camera, r.off,
+      <td class="num">${r.off ? clock(r.off) + (r.off_override ? OVERRIDE_TAG : "") + clip(r.off_camera, r.off,
         clipTitle(s.name, "got_off", r.bus_name, `${day(r.off)} ${clock(r.off)}`)) : "—"}</td>
       <td>${status(r.status)}${r.resolved_at ? ` <span class="muted">· ${r.status === "dropped_off" ? "Marked" : "Resolved"} ${day(r.resolved_at)} ${clock(r.resolved_at)}</span>` : ""}</td>
     </tr>`).join("");

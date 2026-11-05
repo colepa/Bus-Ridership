@@ -1,0 +1,487 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<!-- iPad: no zooming; "Add to Home Screen" opens it full screen like an app -->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Driver</title>
+<style>
+  /* Same colors and components as index.html (the manager page), far fewer of them:
+     one page, issues on top, every student below. */
+  :root {
+    --bg: #f5f7f9; --panel: #fff; --border: #e6e9ec; --line: #eef0f2;
+    --text: #1f2933; --muted: #6b7684; --chip: #eef1f4; --outline: #c9cfd6;
+    --blue: #1a88e0; --blue-soft: #e7f2fc;
+    --green: #22a85a; --green-soft: #e6f6ec;
+    --red: #d93a3a; --red-soft: #fdeeee;
+    --amber: #d98a00; --amber-soft: #fdf3e1;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 16px/1.4 "Open Sans", -apple-system, "Segoe UI", system-ui, sans-serif; }
+  svg { flex: none; }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  .muted { color: var(--muted); }
+  .sub { color: var(--muted); font-size: 14px; }
+
+  .content { max-width: 920px; margin: 0 auto; padding: 24px 20px 40px; }
+
+  /* top line: bus name ......... ● Live · 12 aboard   [End route] */
+  .page-head { display: flex; align-items: center; gap: 16px; margin-bottom: 20px; min-height: 48px; }
+  .page-head h1 { font-size: 26px; font-weight: 700; margin: 0; flex: 1; min-width: 0; }
+  .page-head .facts { display: flex; align-items: center; gap: 14px; }
+  .divider { width: 1px; height: 16px; background: var(--border); flex: none; }
+
+  /* buttons: tall, for fingers */
+  .pill-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 48px;
+              padding: 0 22px; white-space: nowrap; flex: none;
+              background: var(--panel); border: 1px solid var(--outline); border-radius: 999px; font-weight: 500; }
+  .pill-btn:active { background: var(--chip); }
+  .pill-btn.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+  .pill-btn.primary:active { filter: brightness(.92); }
+  .pill-btn:disabled { opacity: .5; }
+  /* round back button, left of the bus name (same as the manager page's) */
+  .round-btn { width: 48px; height: 48px; border-radius: 50%; border: 1px solid var(--outline);
+               background: var(--panel); color: inherit; display: grid; place-items: center; flex: none; }
+  .round-btn:active { background: var(--chip); }
+
+  /* panels */
+  .panel { background: var(--panel); border-radius: 12px; margin-bottom: 16px; overflow: hidden; }
+  .panel-head { display: flex; align-items: center; gap: 10px; padding: 18px 24px 8px; }
+  .panel-head h2 { font-size: 17px; font-weight: 600; margin: 0; }
+  .count { background: var(--chip); color: var(--muted); border-radius: 999px; padding: 1px 10px;
+           font-size: 13px; font-weight: 600; }
+  .empty-state { padding: 32px 24px; text-align: center; color: var(--muted); }
+
+  /* status = colored dot + text */
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; flex: none; }
+  .dot.green { background: var(--green); } .dot.red { background: var(--red); }
+  .dot.amber { background: var(--amber); } .dot.gray { background: #b4bcc5; }
+  .dot.blue { background: var(--blue); }
+  .status { display: inline-flex; align-items: center; font-size: 14px; font-weight: 500; white-space: nowrap; }
+  .override { color: var(--amber); font-weight: 600; }
+
+  /* avatars */
+  .avatar { width: 48px; height: 48px; border-radius: 50%; background: #e4e8ec; color: #4a5560;
+            display: grid; place-items: center; font-size: 16px; font-weight: 600; flex: none; overflow: hidden; }
+  .avatar.big { width: 72px; height: 72px; font-size: 24px; }
+  .avatar.huge { width: 240px; height: 240px; font-size: 80px; }
+  .avatar img { width: 100%; height: 100%; object-fit: cover; }
+  .icon-circle { width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; flex: none; }
+  .icon-circle.red { background: var(--red-soft); color: var(--red); }
+  .icon-circle.amber { background: var(--amber-soft); color: var(--amber); }
+  .icon-circle.green { background: var(--green-soft); color: var(--green); }
+
+  /* one row = an issue or a student. Tall, like Command's lists. */
+  .row { display: flex; align-items: center; gap: 16px; padding: 12px 24px; min-height: 72px; }
+  .row + .row { border-top: 1px solid var(--line); }
+  .row.flagged { background: #fffaf0; }
+  .row .who { flex: 1; min-width: 0; }
+  .row .title { font-weight: 600; }
+  .title.red { color: var(--red); } .title.amber { color: var(--amber); } .title.green { color: var(--green); }
+  .row .status { width: 140px; }
+  .row .pill-btn { min-width: 120px; }
+  .row .time { color: var(--muted); font-size: 14px; white-space: nowrap; }
+
+  /* Student status, readable at a quick scroll: a colored stripe down the
+     left edge, a ring around the photo, and the status in that color.
+     Dropped-off kids fade back, since they need no attention. */
+  .student { border-left: 6px solid transparent; padding-left: 18px; }
+  .student .status { font-size: 16px; font-weight: 600; width: 160px; }
+  .student .status .dot { width: 12px; height: 12px; margin-right: 8px; }
+  /* Same colors as the manager page's bar: blue = aboard, green = dropped off. */
+  .student.blue { border-left-color: var(--blue); background: var(--blue-soft); }   /* aboard */
+  .student.blue .status { color: var(--blue); }
+  .student.blue .avatar { box-shadow: 0 0 0 3px var(--blue); }
+  .student.green { border-left-color: var(--green); }                               /* dropped off */
+  .student.green .status { color: var(--green); }
+  .student.red { border-left-color: var(--red); background: var(--red-soft); }
+  .student.red .status { color: var(--red); }
+  .student.red .avatar { box-shadow: 0 0 0 3px var(--red); }
+  .student.amber { border-left-color: var(--amber); background: var(--amber-soft); }
+  .student.amber .status { color: var(--amber); }
+  .student.amber .avatar { box-shadow: 0 0 0 3px var(--amber); }
+  /* no show: a softer yellow than wrong bus, no tint or ring (it's common, not urgent) */
+  .student.soft-amber { border-left-color: #f0d199; }
+  .student.soft-amber .status { color: #c09040; }
+  .dot.soft-amber { background: #e8c27a; }
+  .student.gray .status { color: var(--muted); }        /* not boarded yet: plain, no stripe */
+  .student.faded .avatar, .student.faded .who { opacity: .5; }
+
+  /* bus picker */
+  .bus-pic { width: 64px; height: 48px; object-fit: contain; flex: none; }
+
+  /* pop-ups: dim background, white card in the middle */
+  .overlay { position: fixed; inset: 0; background: rgba(15, 20, 30, .55); z-index: 50;
+             display: grid; place-items: center; padding: 24px; }
+  .overlay[hidden] { display: none; }
+
+  /* the scan pop-up: big photo + name, so the driver can match face to card */
+  .scan-card { background: var(--panel); border-radius: 20px; width: min(560px, 100%);
+               padding: 40px 32px 32px; display: flex; flex-direction: column; align-items: center; gap: 10px;
+               text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,.3); border-top: 10px solid var(--green);
+               animation: pop .18s ease-out; }
+  .scan-card.blue { border-top-color: var(--blue); }
+  .scan-card.red { border-top-color: var(--red); }
+  .scan-card .avatar { margin-bottom: 10px; box-shadow: 0 0 0 6px var(--green-soft); }
+  .scan-card.blue .avatar { box-shadow: 0 0 0 6px var(--blue-soft); }
+  .scan-card.red .avatar { box-shadow: 0 0 0 6px var(--red-soft); color: var(--red); }
+  .scan-name { font-size: 40px; font-weight: 700; line-height: 1.15; }
+  .scan-status { display: inline-flex; align-items: center; font-size: 22px; font-weight: 600; }
+  .scan-status .dot { width: 14px; height: 14px; margin-right: 10px; }
+  .scan-card.red .scan-status { color: var(--red); }
+  .scan-sub { font-size: 18px; color: var(--muted); }
+  .scan-card .pill-btn { margin-top: 16px; min-width: 200px; }
+  @keyframes pop { from { transform: scale(.92); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+  /* "Unboard Ava Smith?" confirm sheet */
+  .sheet { background: var(--panel); border-radius: 16px; width: min(460px, 100%); padding: 28px;
+           display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center;
+           box-shadow: 0 20px 60px rgba(0,0,0,.3); }
+  .sheet h2 { margin: 8px 0 0; font-size: 20px; }
+  .sheet .sub { max-width: 340px; line-height: 1.45; }
+  .sheet-actions { display: flex; gap: 12px; margin-top: 16px; width: 100%; }
+  .sheet-actions .pill-btn { flex: 1; }
+
+  /* error message at the bottom */
+  .toast { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); z-index: 60;
+           background: #1f2933; color: #fff; padding: 12px 22px; border-radius: 999px; font-weight: 500;
+           box-shadow: 0 8px 28px rgba(0,0,0,.2); }
+  .toast[hidden] { display: none; }
+
+  /* iPad portrait / phone */
+  @media (max-width: 700px) {
+    .page-head { flex-wrap: wrap; }
+    .row .status { width: auto; }
+    .row .pill-btn { min-width: 0; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Icons, defined once. Used as icon("warn") etc. Same drawings as index.html. -->
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="i-warn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 3.5l9.5 16.5h-19z"/><path d="M12 10v4.5M12 17.3v.1"/></symbol>
+  <symbol id="i-card" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="3" y="5.5" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h4"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M14.5 6l-6 6 6 6"/></symbol>
+  <symbol id="i-bus"viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="4" y="3" width="16" height="15" rx="3"/><path d="M4 11h16M8 21v-3M16 21v-3"/><circle cx="8" cy="14.5" r=".8"/><circle cx="16" cy="14.5" r=".8"/></symbol>
+</svg>
+
+<div class="content" id="page"></div>
+
+<!-- Scan pop-up. Card taps go away by themselves; problems wait for OK. -->
+<div id="scan" class="overlay" hidden onclick="if (!scanStays) hideScan()">
+  <div id="scan-card" class="scan-card"></div>
+</div>
+
+<!-- "Are you sure?" for Board / Unboard / Dismiss / End route -->
+<div id="confirm" class="overlay" hidden onclick="if (event.target === this) closeConfirm()">
+  <div class="sheet">
+    <div id="confirm-top"></div>
+    <h2 id="confirm-title"></h2>
+    <div id="confirm-text" class="sub"></div>
+    <div class="sheet-actions">
+      <button class="pill-btn" onclick="closeConfirm()">Cancel</button>
+      <button class="pill-btn primary" id="confirm-yes"></button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+
+<script>
+// ------------------------------------------------------------ helpers ----
+
+const $ = id => document.getElementById(id);
+
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g,
+    c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+}
+function clock(t) { return new Date(t * 1000).toLocaleTimeString([], {hour: "numeric", minute: "2-digit"}); }
+function initials(name) {
+  return String(name).split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join("");
+}
+function icon(name, size = 20) { return `<svg width="${size}" height="${size}"><use href="#i-${name}"/></svg>`; }
+function status(label, color) {
+  return `<span class="status"><span class="dot ${color}"></span>${label}</span>`;
+}
+
+// Every request goes through here. The ngrok header skips ngrok's
+// "you are about to visit..." page, which would otherwise come back instead of JSON.
+async function api(url, data) {
+  const options = { headers: { "ngrok-skip-browser-warning": "1" } };
+  if (data !== undefined) {
+    options.method = "POST";
+    options.headers["Content-Type"] = "application/json";
+    options.body = JSON.stringify(data);
+  }
+  const r = await fetch(url, options);
+  let body = null;
+  try { body = await r.json(); } catch {}
+  if (!r.ok) throw new Error((body && body.error) || `Error ${r.status}`);
+  return body;
+}
+
+let toastTimer = null;
+function toast(text) {
+  $("toast").textContent = text;
+  $("toast").hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { $("toast").hidden = true; }, 4000);
+}
+
+// Profile photos: {user_id: version}, from /driver/<bus>/state. No photo -> initials.
+let photos = {};
+function avatar(userId, name, size = "") {
+  const v = photos[userId];
+  const inner = v ? `<img src="/photo/${encodeURIComponent(userId)}?v=${v}" alt="">` : esc(initials(name));
+  return `<div class="avatar ${size}">${inner}</div>`;
+}
+
+// The page URL is /driver (pick a bus, once) or /driver/<door_id> (that bus).
+const doorId = decodeURIComponent(location.pathname.split("/")[2] || "");
+const busUrl = `/driver/${encodeURIComponent(doorId)}`;
+
+// ------------------------------------------- no bus in the URL: pick one ----
+
+async function showPicker() {
+  const buses = await api("/driver/buses");
+  const rows = buses.map(b => `
+    <div class="row" onclick="location.href='/driver/${encodeURIComponent(b.door_id)}'" style="cursor:pointer">
+      <img class="bus-pic" src="/bus.png" alt="">
+      <div class="who title">${esc(b.name)}</div>
+    </div>`).join("");
+  $("page").innerHTML = `
+    <header class="page-head"><h1>Which bus are you driving?</h1></header>
+    <section class="panel">${rows || `<div class="empty-state">No buses yet.</div>`}</section>`;
+}
+
+// ------------------------------------------------------------ the bus ----
+
+let m = null;          // the last /driver/<bus>/state
+let live = false;      // is the push connection to the server open?
+
+async function load() {
+  try {
+    m = await api(`${busUrl}/state`);
+  } catch (e) {
+    toast(`Couldn't load the bus: ${e.message}`);
+    return;
+  }
+  photos = m.photos;
+  draw();
+}
+
+// What an issue looks like: [color, icon, text after the name].
+const ISSUES = {
+  "Card rejected":     ["amber", "card", "scanned a card that isn't allowed on this bus"],
+  "Unrecognized card": ["amber", "card", "isn't linked to any student"],
+  "Wrong bus":         ["red", "warn", "is not on this bus's roster"],
+  "Never tapped off":  ["red", "warn", "was still on the bus when the route ended. Check the bus."],
+};
+
+function draw() {
+  const enRoute = m.route && m.route.ended_at === null;
+  const ended = m.route && m.route.ended_at !== null;
+  const nAboard = m.students.filter(s => s.status === "aboard").length;
+
+  // Top line: bus name, connection, headcount, route button.
+  const head = `
+    <header class="page-head">
+      <a class="round-btn" href="/driver" title="Change bus">${icon("back", 22)}</a>
+      <h1>${esc(m.name)}</h1>
+      <div class="facts">
+        ${live ? status("Live", "green") : status("Reconnecting…", "amber")}
+        ${m.route ? `<span class="divider"></span><span class="status">${nAboard} ${ended ? "still on bus" : "aboard"}</span>` : ""}
+      </div>
+      ${enRoute
+        ? `<button class="pill-btn" onclick="endRoute()">End route</button>`
+        : `<button class="pill-btn primary" onclick="startRoute()">Start route</button>`}
+    </header>`;
+
+  // Issues, each with its button.
+  const issueRows = m.issues.map(i => {
+    const [color, iconName, text] = ISSUES[i.title];
+    const button = i.key.startsWith("never_off:") ? "Mark as dropped off" : "Dismiss";
+    return `<div class="row">
+      <div class="icon-circle ${color}">${icon(iconName, 22)}</div>
+      <div class="who"><div class="title ${color}">${esc(i.title)}</div>
+        <div><b>${esc(i.who)}</b> <span class="muted">${text}</span></div></div>
+      <span class="time">${clock(i.time)}</span>
+      <button class="pill-btn" data-key="${esc(i.key)}" data-label="${button}">${button}</button>
+    </div>`;
+  }).join("");
+  const issues = !m.route ? "" : `
+    <section class="panel">
+      <div class="panel-head"><h2>Issues</h2><span class="count">${m.issues.length}</span></div>
+      ${issueRows || `<div class="row">
+        <div class="icon-circle green">${icon("check", 22)}</div>
+        <div class="who"><div class="title green">All clear</div></div></div>`}
+    </section>`;
+
+  // Every student, A to Z, so rows don't move around under the driver's finger.
+  const studentRows = m.students.map(s => studentRow(s, enRoute, ended)).join("");
+  const students = `
+    <section class="panel">
+      <div class="panel-head"><h2>Students</h2><span class="count">${m.students.length}</span></div>
+      ${studentRows || `<div class="empty-state">No students on this bus's roster yet.</div>`}
+    </section>`;
+
+  $("page").innerHTML = head + issues + students;
+}
+
+function studentRow(s, enRoute, ended) {
+  let label, color, sub = "";
+  if (s.status === "aboard") {
+    [label, color] = s.wrong_bus ? ["Wrong bus", "amber"] : ended ? ["Still on bus", "red"] : ["Aboard", "blue"];
+    sub = `On at ${clock(s.since)}`;
+  } else if (s.status === "dropped_off") {
+    [label, color] = ["Dropped off", "green"];
+    sub = `Off at ${clock(s.since)}`;
+  } else {
+    [label, color] = ended ? ["No show", "soft-amber"] : ["Not boarded", "gray"];
+  }
+  if (s.override) sub += ` · <span class="override">Driver override</span>`;
+  // Board / Unboard only while the route is running (the server checks too).
+  const action = s.status === "aboard" ? "unboard" : "board";
+  const button = enRoute
+    ? `<button class="pill-btn" data-user="${esc(s.user_id)}" data-action="${action}">${action === "board" ? "Board" : "Unboard"}</button>` : "";
+  const faded = s.status === "dropped_off" ? "faded" : "";
+  return `<div class="row student ${color} ${faded}">
+    ${avatar(s.user_id, s.name)}
+    <div class="who"><div class="title">${esc(s.name)}</div>${sub ? `<div class="sub">${sub}</div>` : ""}</div>
+    ${status(label, color)}${button}
+  </div>`;
+}
+
+// ----------------------------------------------------- driver actions ----
+// Every action asks first: a wrong tap on a moving bus shouldn't count.
+
+let confirmYes = null;
+function ask(top, title, text, button, yes) {
+  $("confirm-top").innerHTML = top;
+  $("confirm-title").textContent = title;
+  $("confirm-text").textContent = text;
+  $("confirm-yes").textContent = button;
+  $("confirm-yes").disabled = false;
+  confirmYes = yes;
+  $("confirm").hidden = false;
+}
+function closeConfirm() { $("confirm").hidden = true; confirmYes = null; }
+$("confirm-yes").onclick = async () => {
+  $("confirm-yes").disabled = true;   // no double press
+  try { await confirmYes(); } catch (e) { toast(e.message); }
+  closeConfirm();
+  load();
+};
+
+// One handler for every Board / Unboard / Dismiss button.
+document.addEventListener("click", e => {
+  const btn = e.target.closest("button[data-action], button[data-key]");
+  if (!btn || !m) return;
+  if (btn.dataset.action) {
+    const s = m.students.find(x => x.user_id === btn.dataset.user);
+    const board = btn.dataset.action === "board";
+    ask(avatar(s.user_id, s.name, "big"), `${board ? "Board" : "Unboard"} ${s.name}?`,
+        `This is saved as a driver override, with the bus camera clip from right now.`,
+        board ? "Board" : "Unboard",
+        () => api(`${busUrl}/override`, { user_id: s.user_id, action: btn.dataset.action }));
+  } else {
+    const i = m.issues.find(x => x.key === btn.dataset.key);
+    const [color, iconName] = ISSUES[i.title];
+    ask(`<div class="icon-circle ${color}">${icon(iconName, 22)}</div>`,
+        `${btn.dataset.label}: ${i.who}?`,
+        `It's saved as dismissed by the driver, with the bus camera clip from right now.`,
+        btn.dataset.label,
+        () => api(`${busUrl}/dismiss`, { key: i.key }));
+  }
+});
+
+function startRoute() { api(`${busUrl}/route/start`, {}).then(load, e => toast(e.message)); }
+function endRoute() {
+  ask(`<div class="icon-circle green">${icon("bus", 22)}</div>`, "End the route?",
+      "Anyone still aboard will show as never tapped off.", "End route",
+      () => api(`${busUrl}/route/end`, {}));
+}
+
+// ------------------------------------------------------- scan pop-up ----
+
+let scanTimer = null;
+let scanStays = false;   // problems stay up until the driver taps OK
+
+function showScan(ev) {
+  let color, label, name = ev.name, sub = "";
+  const where = ev.assigned && ev.assigned.length ? `Assigned to ${ev.assigned.join(", ")}` : "Not assigned to any bus";
+  if (ev.kind === "rejected") {
+    color = "red";
+    label = ev.user_id ? "Card rejected" : "Unrecognized card";
+    name = ev.user_id ? ev.name : `Card ${ev.card}`;
+    sub = ev.user_id ? where : "Not linked to any student";
+  } else if (ev.wrong_bus) {
+    color = "red";
+    label = ev.kind === "on" ? "Wrong bus" : "Got off · wrong bus";
+    sub = where;
+  } else if (ev.kind === "on") {
+    color = "blue"; label = "Boarded";     // same colors as the student list
+  } else {
+    color = "green"; label = "Got off";
+  }
+  const face = ev.user_id ? avatar(ev.user_id, name, "huge") : `<div class="avatar huge">${icon("card", 110)}</div>`;
+  scanStays = color === "red";
+
+  $("scan-card").className = `scan-card ${color}`;
+  $("scan-card").innerHTML = `${face}
+    <div class="scan-name">${esc(name)}</div>
+    <div class="scan-status"><span class="dot ${color}"></span>${label} · ${clock(ev.time)}</div>
+    ${sub ? `<div class="scan-sub">${esc(sub)}</div>` : ""}
+    ${scanStays ? `<button class="pill-btn primary" onclick="hideScan()">OK</button>` : ""}`;
+  $("scan").hidden = false;
+  clearTimeout(scanTimer);
+  if (!scanStays) scanTimer = setTimeout(hideScan, 2500);
+}
+
+function hideScan() { clearTimeout(scanTimer); $("scan").hidden = true; }
+
+// ------------------------------------------------------- live updates ----
+// The server pushes a line for every scan or change on this bus (see
+// driver_events in app.py). The browser reconnects by itself if it drops.
+
+function connect() {
+  const events = new EventSource(`${busUrl}/events`);
+  events.onopen = () => { live = true; load(); };   // reload: we may have missed something
+  events.onerror = () => { live = false; if (m) draw(); };
+  events.onmessage = e => {
+    const ev = JSON.parse(e.data);
+    if (ev.kind !== "changed") showScan(ev);
+    load();
+  };
+}
+
+// Keep the iPad screen on while the page is open (Safari 16.4+).
+async function keepAwake() {
+  try { await navigator.wakeLock.request("screen"); } catch {}
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") { keepAwake(); if (doorId) load(); }
+});
+
+if (doorId) {
+  load();
+  connect();
+  keepAwake();
+  setInterval(load, 30000);   // backup, in case a push is missed
+} else {
+  showPicker().catch(e => toast(e.message));
+}
+</script>
+</body>
+</html>

@@ -19,7 +19,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 import httpx
 from fastapi import BackgroundTasks, FastAPI, Request
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 
 HERE = Path(__file__).resolve().parent
 load_dotenv(HERE / ".env")
@@ -63,6 +63,15 @@ PARENTS_FILE = HERE / "parents.json"
 #             # Keys: "alert:<event_id>", "wrong_bus:<user_id>", "never_off:<user_id>".
 #             # Resolved issues leave "Needs attention" but are kept for the record.
 #             "resolved": {"wrong_bus:<user_id>": 1791847900},
+#             # Everything the driver did on the driver page, this route, oldest first.
+#             # Board/unboard also adds a tap to "taps" (key "driver-<n>", "override": True),
+#             # so the on/off toggle works as usual. Dismiss also sets "resolved".
+#             # camera_id + time = the clip of the moment the driver pressed the button.
+#             "driver_log": [
+#                 {"action": "board" | "unboard" | "dismiss", "time": 1791847950,
+#                  "user_id": "..." or None, "name": "...", "camera_id": "..." or None,
+#                  "key": "alert:<event_id>", "title": "Card rejected"},   # dismiss only
+#             ],
 #         },
 #     },
 #     # Finished routes, oldest first. "Start route" moves the bus's previous
@@ -71,7 +80,7 @@ PARENTS_FILE = HERE / "parents.json"
 #     # from `simulate.py history`.
 #     "past_routes": [
 #         {"door_id": "...", "bus_name": "Bus 12", "started_at": ..., "ended_at": ...,
-#          "roster": {...}, "taps": {...}, "alerts": {...}, "resolved": {...}},
+#          "roster": {...}, "taps": {...}, "alerts": {...}, "resolved": {...}, "driver_log": [...]},
 #     ],
 # }
 #
@@ -85,6 +94,7 @@ def load_state():
             loaded.setdefault("past_routes", [])
             for bus in loaded["buses"].values():
                 bus.setdefault("resolved", {})   # state.json from before "Resolve" existed
+                bus.setdefault("driver_log", [])  # ...and before the driver page
             return loaded
         # state.json from the single-bus version: start fresh (it's a demo).
     return {"buses": {}, "past_routes": []}
@@ -120,7 +130,7 @@ def add_fake_buses():
 
 def new_bus(name):
     return {"name": name, "route": None, "taps": {}, "alerts": {}, "roster": {}, "resolved": {},
-            "camera_id": None}
+            "driver_log": [], "camera_id": None}
 
 
 def clip_camera(tap, bus):
@@ -143,11 +153,12 @@ def counted_taps(taps):
 
     A tap within DEBOUNCE_SECONDS of that student's previous counted tap is
     dropped (an accidental double tap). Taps 1, 3, 5... are "on", 2, 4... "off".
+    Driver overrides always count: the driver pressed a button on purpose.
     """
     by_student = {}
     for tap in sorted(taps.values(), key=lambda t: t["time"]):
         mine = by_student.setdefault(tap["user_id"], [])
-        if mine and tap["time"] - mine[-1]["time"] < DEBOUNCE_SECONDS:
+        if mine and not tap.get("override") and tap["time"] - mine[-1]["time"] < DEBOUNCE_SECONDS:
             continue
         mine.append(tap)
     return by_student
@@ -172,6 +183,9 @@ def compute_manifest(bus):
             "last_tap": counted[-1]["time"],
             "on_camera": clip_camera(counted[0], bus),
             "last_camera": clip_camera(counted[-1], bus),
+            # True if that tap was the driver pressing Board/Unboard, not a card.
+            "on_override": bool(counted[0].get("override")),
+            "last_override": bool(counted[-1].get("override")),
             "wrong_bus": bool(bus["roster"]) and user_id not in bus["roster"],
             # Still on the bus at the end, then someone pressed "Mark as dropped off":
             # the time they pressed it. Counts as off the bus.
@@ -239,7 +253,7 @@ def current_routes():
             "door_id": door_id, "bus_name": bus["name"],
             "started_at": bus["route"]["started_at"], "ended_at": bus["route"]["ended_at"],
             "roster": bus["roster"], "taps": bus["taps"], "alerts": bus["alerts"],
-            "resolved": bus["resolved"],
+            "resolved": bus["resolved"], "driver_log": bus["driver_log"],
         })
     return routes
 
@@ -263,7 +277,10 @@ def student_rows(route, user_id):
         on = taps[i]["time"]
         off = taps[i + 1]["time"] if i + 1 < len(taps) else None
         cameras = {"on_camera": clip_camera(taps[i], bus),
-                   "off_camera": clip_camera(taps[i + 1], bus) if off else None}
+                   "off_camera": clip_camera(taps[i + 1], bus) if off else None,
+                   # set by the driver page (Board / Unboard), not a card scan
+                   "on_override": bool(taps[i].get("override")),
+                   "off_override": bool(off and taps[i + 1].get("override"))}
         resolved_at = None
         if route["roster"] and not assigned:
             status = "wrong_bus"
@@ -316,14 +333,21 @@ def parent_phone(user_id):
     return json.loads(PARENTS_FILE.read_text()).get(user_id)
 
 
-def tap_text(bus, event_id, user_id):
-    """The parent text for this tap, e.g. "Ava Smith got on Bus 1 at 7:42 AM.",
-    or None if the tap doesn't count (a debounced double tap)."""
+def tap_direction(bus, event_id, user_id):
+    """"on" or "off" for this tap, or None if it doesn't count (a debounced double tap)."""
     counted = counted_taps(bus["taps"]).get(user_id, [])
     position = next((i for i, t in enumerate(counted, 1) if t is bus["taps"][event_id]), None)
     if position is None:
         return None
-    on_or_off = "on" if position % 2 == 1 else "off"
+    return "on" if position % 2 == 1 else "off"
+
+
+def tap_text(bus, event_id, user_id):
+    """The parent text for this tap, e.g. "Ava Smith got on Bus 1 at 7:42 AM.",
+    or None if the tap doesn't count (a debounced double tap)."""
+    on_or_off = tap_direction(bus, event_id, user_id)
+    if on_or_off is None:
+        return None
     name = bus["roster"].get(user_id) or bus["taps"][event_id]["name"]
     at = time.strftime("%-I:%M %p", time.localtime(bus["taps"][event_id]["time"]))
     return f"{name} got {on_or_off} {bus['name']} at {at}."
@@ -428,6 +452,9 @@ async def webhook(request: Request, background: BackgroundTasks):
         }
         save_state()
         print(f"[alert] {bus['name']}: rejected tap user_id={user.get('user_id')} time={tap_time}")
+        notify(door_id, {"kind": "rejected", "user_id": user.get("user_id"), "name": user.get("name"),
+                         "card": data.get("input_value"), "time": tap_time,
+                         "assigned": assigned_buses(user["user_id"]) if user.get("user_id") else []})
         return {"ok": True}
 
     # Accepted tap. Keyed by event_id, so the same tap delivered twice only counts once.
@@ -442,6 +469,18 @@ async def webhook(request: Request, background: BackgroundTasks):
     }
     save_state()
     print(f"[tap] {bus['name']}: user_id={user['user_id']} time={tap_time}")
+
+    # Tell the driver page. A retry or a debounced double tap only refreshes
+    # the list; a counted tap also shows the big name + photo.
+    direction = tap_direction(bus, data["event_id"], user["user_id"])
+    if direction and not already_seen:
+        notify(door_id, {"kind": direction, "user_id": user["user_id"],
+                         "name": bus["roster"].get(user["user_id"]) or user.get("name") or "(no name)",
+                         "time": tap_time,
+                         "wrong_bus": bool(bus["roster"]) and user["user_id"] not in bus["roster"],
+                         "assigned": assigned_buses(user["user_id"])})
+    else:
+        notify(door_id, {"kind": "changed"})
 
     phone = parent_phone(user["user_id"])
     text = tap_text(bus, data["event_id"], user["user_id"])
@@ -510,6 +549,7 @@ async def bus_manifest(door_id: str):
         "not_boarded": not_boarded,
         "alerts": alerts,
         "resolved": bus["resolved"],
+        "driver_log": bus["driver_log"],
         "flags": count_flags(bus, on_bus, off_bus),
     }
 
@@ -526,6 +566,7 @@ async def resolve(door_id: str, request: Request):
         return JSONResponse({"error": "missing key"}, status_code=400)
     bus["resolved"].setdefault(key, int(time.time()))
     save_state()
+    notify(door_id, {"kind": "changed"})
     return {"ok": True}
 
 
@@ -634,13 +675,15 @@ async def start_route(door_id: str):
             "started_at": bus["route"]["started_at"],
             "ended_at": bus["route"]["ended_at"] or int(time.time()),
             "roster": dict(bus["roster"]), "taps": bus["taps"], "alerts": bus["alerts"],
-            "resolved": bus["resolved"],
+            "resolved": bus["resolved"], "driver_log": bus["driver_log"],
         })
     bus["route"] = {"started_at": int(time.time()), "ended_at": None}
     bus["taps"] = {}
     bus["alerts"] = {}
     bus["resolved"] = {}
+    bus["driver_log"] = []
     save_state()
+    notify(door_id, {"kind": "changed"})
     return {"ok": True}
 
 
@@ -652,6 +695,7 @@ async def end_route(door_id: str):
     if route_active(bus):
         bus["route"]["ended_at"] = int(time.time())
         save_state()
+        notify(door_id, {"kind": "changed"})
     return {"ok": True}
 
 
@@ -673,6 +717,8 @@ async def refresh_roster():
             bus["name"] = info["name"]
         bus["roster"] = info["roster"]
     save_state()
+    for door_id in fetched:
+        notify(door_id, {"kind": "changed"})
 
     # Profile photos, saved as photos/<user_id>.jpg. A failure here (e.g. the
     # API key can't read photos) doesn't undo the roster; the page says so.
@@ -713,3 +759,182 @@ async def photo(user_id: str):
         return JSONResponse({"error": "no photo"}, status_code=404)
     # Cached for a day: the page polls every 2 s and would re-fetch otherwise.
     return FileResponse(path, headers={"Cache-Control": "max-age=86400"})
+
+
+# --------------------------------------------------------- driver page ----
+#
+# driver.html, on the bus's iPad. Only ever uses endpoints under /driver/
+# (plus /photo), so a sign-in later can allow drivers /driver/<their bus>/...
+# and nothing else.
+#
+# Live updates are pushed, not polled: the page keeps one /driver/<bus>/events
+# connection open (server-sent events) and the server writes a line to it
+# whenever something happens on that bus. Over ngrok that's one request per
+# page load instead of one every 2 s, and the scan shows up instantly.
+
+listeners = {}   # {door_id: [asyncio.Queue, ...]}, one queue per open driver page
+
+
+def notify(door_id, event):
+    """Push an event to every driver page open on this bus.
+    {"kind": "on" | "off" | "rejected", ...} = a scan (shown big on screen);
+    {"kind": "changed"} = something else changed, just reload the list."""
+    for queue in listeners.get(door_id, []):
+        queue.put_nowait(event)
+
+
+@app.get("/driver")
+async def driver_page_pick():
+    return FileResponse(HERE / "driver.html")
+
+
+@app.get("/driver/buses")
+async def driver_buses():
+    """For the bus picker: [{door_id, name}]."""
+    return sorted(({"door_id": d, "name": b["name"]} for d, b in state["buses"].items()),
+                  key=lambda b: b["name"])
+
+
+@app.get("/driver/{door_id}")
+async def driver_page(door_id: str):
+    return FileResponse(HERE / "driver.html")
+
+
+@app.get("/driver/{door_id}/state")
+async def driver_state(door_id: str):
+    """Everything the driver page draws: every student with their status, and the open issues."""
+    bus = state["buses"].get(door_id)
+    if bus is None:
+        return JSONResponse({"error": "no such bus"}, status_code=404)
+    on_bus, off_bus, not_boarded = compute_manifest(bus)
+
+    students = []
+    for s in on_bus:
+        students.append({"user_id": s["user_id"], "name": s["name"], "status": "aboard",
+                         "since": s["last_tap"], "override": s["last_override"], "wrong_bus": s["wrong_bus"]})
+    for s in off_bus:
+        students.append({"user_id": s["user_id"], "name": s["name"], "status": "dropped_off",
+                         "since": s["marked_off"] or s["last_tap"], "override": s["last_override"],
+                         "wrong_bus": s["wrong_bus"]})
+    for s in not_boarded:
+        students.append({"user_id": s["user_id"], "name": s["name"], "status": "not_boarded",
+                         "since": None, "override": False, "wrong_bus": False})
+    students.sort(key=lambda s: s["name"])
+
+    times = [t["time"] for t in bus["taps"].values() if not t.get("override")]
+    times += [a["time"] for a in bus["alerts"].values()]
+    return {
+        "door_id": door_id,
+        "name": bus["name"],
+        "route": bus["route"],
+        "students": students,
+        "issues": list_flags(bus, on_bus, off_bus),
+        "last_scan": max(times) if times else None,
+        # Everyone's photo versions (same as /photos), so a wrong-bus rider has a face
+        # too, and the page needs one request per update instead of two.
+        "photos": await photo_list(),
+    }
+
+
+@app.get("/driver/{door_id}/events")
+async def driver_events(door_id: str):
+    """Server-sent events: one line per event, "data: {...json...}", for as long
+    as the page stays open. A comment line every 15 s keeps the connection
+    from being closed as idle (ngrok, iPad). The browser reconnects by itself."""
+    queue = asyncio.Queue()
+    listeners.setdefault(door_id, []).append(queue)
+
+    async def stream():
+        try:
+            yield ": connected\n\n"
+            while True:
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=15)
+                    yield f"data: {json.dumps(event)}\n\n"
+                except asyncio.TimeoutError:
+                    yield ": still here\n\n"
+        finally:   # page closed: stop sending to it
+            listeners[door_id].remove(queue)
+
+    return StreamingResponse(stream(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache"})
+
+
+@app.post("/driver/{door_id}/override")
+async def driver_override(door_id: str, request: Request):
+    """The driver boards or unboards a student by hand. Body: {"user_id", "action": "board" | "unboard"}.
+
+    Saved as an extra tap marked "override", so the usual on/off toggle does
+    the rest, and logged in driver_log with the door camera, for the clip.
+    """
+    bus = state["buses"].get(door_id)
+    if bus is None:
+        return JSONResponse({"error": "no such bus"}, status_code=404)
+    if not route_active(bus):
+        return JSONResponse({"error": "No route running. Start the route first."}, status_code=409)
+    body = await request.json()
+    user_id, action = body.get("user_id"), body.get("action")
+    if action not in ("board", "unboard"):
+        return JSONResponse({"error": "action must be board or unboard"}, status_code=400)
+
+    on_bus, off_bus, not_boarded = compute_manifest(bus)
+    everyone = {s["user_id"]: s["name"] for s in on_bus + off_bus + not_boarded}
+    if user_id not in everyone:
+        return JSONResponse({"error": "not on this bus"}, status_code=404)
+    aboard = any(s["user_id"] == user_id for s in on_bus)
+    # Checked here, not just on the page: two quick presses (or a page that's
+    # a moment out of date) mustn't toggle the student twice.
+    if action == "board" and aboard:
+        return JSONResponse({"error": f"{everyone[user_id]} is already aboard"}, status_code=409)
+    if action == "unboard" and not aboard:
+        return JSONResponse({"error": f"{everyone[user_id]} isn't aboard"}, status_code=409)
+
+    now = int(time.time())
+    bus["taps"][f"driver-{len(bus['driver_log'])}"] = {
+        "user_id": user_id, "name": everyone[user_id], "time": now,
+        "camera_id": bus.get("camera_id"), "override": True,
+    }
+    bus["driver_log"].append({"action": action, "time": now, "user_id": user_id,
+                              "name": everyone[user_id], "camera_id": bus.get("camera_id")})
+    save_state()
+    print(f"[driver] {bus['name']}: {action} {everyone[user_id]}")
+    notify(door_id, {"kind": "changed"})
+    return {"ok": True}
+
+
+@app.post("/driver/{door_id}/dismiss")
+async def driver_dismiss(door_id: str, request: Request):
+    """The driver dismisses one open issue. Body: {"key": "..."}, same keys as
+    /bus/<door_id>/resolve. Same effect, plus a driver_log entry with the clip."""
+    bus = state["buses"].get(door_id)
+    if bus is None:
+        return JSONResponse({"error": "no such bus"}, status_code=404)
+    key = (await request.json()).get("key")
+    on_bus, off_bus, _ = compute_manifest(bus)
+    issue = next((f for f in list_flags(bus, on_bus, off_bus) if f["key"] == key), None)
+    if issue is None:
+        return JSONResponse({"error": "That issue is already resolved."}, status_code=409)
+
+    now = int(time.time())
+    bus["resolved"][key] = now
+    if key.startswith("alert:"):    # None for a card linked to nobody
+        user_id = bus["alerts"][key.removeprefix("alert:")]["user_id"]
+    else:                           # "wrong_bus:<user_id>" / "never_off:<user_id>"
+        user_id = key.split(":", 1)[1]
+    bus["driver_log"].append({"action": "dismiss", "time": now, "user_id": user_id,
+                              "name": issue["who"], "camera_id": bus.get("camera_id"),
+                              "key": key, "title": issue["title"]})
+    save_state()
+    print(f"[driver] {bus['name']}: dismissed {issue['title']} ({issue['who']})")
+    notify(door_id, {"kind": "changed"})
+    return {"ok": True}
+
+
+@app.post("/driver/{door_id}/route/{action}")
+async def driver_route(door_id: str, action: str):
+    """Start / End route from the driver page. Same as the manager page's buttons."""
+    if action == "start":
+        return await start_route(door_id)
+    if action == "end":
+        return await end_route(door_id)
+    return JSONResponse({"error": "action must be start or end"}, status_code=400)
