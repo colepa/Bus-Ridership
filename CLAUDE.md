@@ -156,15 +156,20 @@ github.com/colepa/Bus-Ridership.
   `notify()` in app.py), not polling: instant, ~1 ngrok request per page load;
   30 s backup reload. Layout (simplified 2026-11-05): one page, no rail/tabs —
   bus name + Live + headcount + route button, Issues, then every student A–Z
-  with a Board/Unboard button. Each counted scan shows a big photo + name for 2.5 s;
+  with a Board/Unboard button. Phone layout (≤700 px): two-line rows. Unknown
+  cards show as "Unknown card" everywhere; on the manager page, hovering
+  the row shows the number (cut to 16 chars), clicking the number opens a pop-up
+  with the full number + Copy. The driver page never shows the number. Each counted scan shows a big photo + name for 2.5 s;
   rejected / wrong bus stay red until OK. Driver can Board / Unboard (en route
   only) and Dismiss / Mark as dropped off, each behind a confirm. Board/Unboard
   = an extra tap `driver-<n>` with `"override": True` (skips debounce, so the
   toggle logic does the rest); Dismiss = same `resolved` key as Resolve. Every
   driver action goes in `bus["driver_log"]` with the bus camera and time; clip =
-  the moment the button was pressed. Manager page: "Driver overrides" panel
-  with clips, "Driver override" tag on passenger and student-history rows,
-  "Resolved by driver". Overrides don't text parents. Driver can Start/End route.
+  the moment the button was pressed. Manager page: no separate panel (too
+  alert-like); a tiny outlined tag after the status,
+  "Driver override" or "Manager override" (= someone pressed "Mark as dropped
+  off" on the manager page), on passenger, student-history and Resolved rows.
+  A marked-off ride's Off column shows the time it was marked. `driver_log` still holds every action. Overrides don't text parents. Driver can Start/End route.
   Not yet tested on the iPad over ngrok (check the ngrok warning page doesn't
   block the events stream).
 - Backfill dropped from scope — testing is stationary with good connectivity.

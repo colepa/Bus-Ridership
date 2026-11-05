@@ -190,7 +190,8 @@
   .row-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 16px; padding: 12px 0;
               border-bottom: 1px solid var(--line); }
   .row .who { flex: 1; min-width: 0; }
-  .row .status { width: 170px; }
+  .row .status { margin-right: 12px; }   /* right-aligned: sits against the camera icon */
+  .row .status:last-child { margin-right: 12px; }   /* no camera icon (not boarded): near the right edge */
 
   /* tables (bus overview, students, ride history) */
   table { width: 100%; border-collapse: collapse; }
@@ -203,7 +204,20 @@
   td .cell { display: flex; align-items: center; gap: 14px; }
   td .strong { font-weight: 600; }
   .red-text { color: var(--red); font-weight: 600; }
-  .override { color: var(--amber); font-weight: 600; }   /* "Driver override" tag */
+  /* "Driver override" / "Manager override": tiny outlined tag after a status,
+     for anything a person set by hand instead of a card scan */
+  .override { display: inline-block; margin-left: 8px; padding: 0 6px; border: 1px solid var(--outline);
+              border-radius: 4px; color: var(--muted); font-size: 11px; font-weight: 600; line-height: 17px;
+              white-space: nowrap; vertical-align: middle; }
+  .override.before { margin: 0 10px 0 0; }   /* passenger rows: in front of the status */
+  /* Unknown card rows: number shows on hover, click opens the full number */
+  .card-peek-wrap { display: none; }
+  .event:hover .card-peek-wrap { display: inline; }
+  .card-peek { cursor: pointer; }
+  .card-peek:hover { color: var(--blue); text-decoration: underline; }
+  .card-popup { width: min(520px, 100%); }
+  .card-full { padding: 4px 24px 18px; font: 600 22px/1.4 ui-monospace, Menlo, monospace; word-break: break-all;
+               user-select: all; }
   /* overview "Needs attention" cell: warning sign + count, or a check */
   .attn { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
   .attn.amber { color: var(--amber); } .attn.green { color: var(--green); } .attn.red { color: var(--red); }
@@ -382,6 +396,20 @@
   </div>
 </div>
 
+<!-- Full number of an unknown card. Opened by clicking its row (openCard). -->
+<div id="card-popup" class="overlay" hidden onclick="if (event.target === this) closeCard()">
+  <div class="player-card card-popup">
+    <div class="panel-head"><h2>Unknown card</h2>
+      <button class="round-btn" title="Close" onclick="closeCard()">
+        <svg width="18" height="18"><use href="#i-close"/></svg></button></div>
+    <div id="card-full" class="card-full num"></div>
+    <div class="player-foot">
+      <span class="sub">Not linked to any student in Command</span>
+      <button class="pill-btn small" onclick="navigator.clipboard.writeText($('card-full').textContent).then(() => { this.textContent = 'Copied'; })">Copy</button>
+    </div>
+  </div>
+</div>
+
 <!-- hls.js plays Verkada's HLS stream in Chrome/Firefox (Safari can play it natively). -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.6.16/hls.min.js"></script>
 
@@ -433,9 +461,10 @@ const STATUS = {
 };
 const FLAGGED = ["left_on_bus", "wrong_bus", "rejected"];
 
-function status(name) {
+// override: "driver" / "manager" if a person set this by hand -> "● Dropped off [Driver override]"
+function status(name, override = null) {
   const [label, color] = STATUS[name];
-  return `<span class="status"><span class="dot ${color}"></span>${label}</span>`;
+  return `<span class="status"><span class="dot ${color}"></span>${label}${overrideTag(override)}</span>`;
 }
 // "● En route since 3:05 PM" / "● Route ended 4:02 PM" / "● No route yet"
 // pulse: make the green dot gently blink (used on the overview).
@@ -488,7 +517,12 @@ const CLIP_EVENTS = {
   driver_dismiss: ["Dismissed by driver", "amber"],
 };
 // Tag after a time that came from the driver page instead of a card.
-const OVERRIDE_TAG = ` · <span class="override">Driver override</span>`;
+// who: "driver" (driver page), "manager" (this page), or null for nothing.
+// before: placed in front of the status (passenger rows) instead of after it.
+function overrideTag(who, before = false) {
+  if (!who) return "";
+  return `<span class="override ${before ? "before" : ""}">${who === "driver" ? "Driver" : "Manager"} override</span>`;
+}
 function clip(cameraId, time, title) {
   if (!cameraId || !time) return `<span class="clip none" title="No clip">${icon("nocamera")}</span>`;
   return clipLink(cameraId, time, title, icon("camera"));
@@ -501,13 +535,13 @@ function clipLink(cameraId, time, title, inner, cls = "clip") {
 }
 
 // One student row in the passenger list.
-function personRow(userId, name, sub, statusName, clipHtml) {
+function personRow(userId, name, sub, statusName, clipHtml, override = null) {
   const flagged = FLAGGED.includes(statusName) ? "flagged" : "";
   return `<div class="row ${flagged}" onclick="location.hash='student/${encodeURIComponent(userId)}'">
     <div class="row-main">
       ${avatar(userId, name)}
       <div class="who"><div>${esc(name)}</div><div class="sub">${sub}</div></div>
-      ${status(statusName)}${clipHtml}
+      ${overrideTag(override, true)}${status(statusName)}${clipHtml}
     </div></div>`;
 }
 
@@ -523,6 +557,15 @@ function eventRow(color, iconName, title, text, time, clipHtml) {
 // With no camera, the player opens with a "no footage" message (openClip).
 function viewClip(cameraId, time, title) {
   return clipLink(cameraId || "", time, title, `${icon("camera", 18)}View clip`, "pill-btn small");
+}
+// Unknown cards: the number stays out of the way. Hovering the row shows the
+// start of it; clicking that number opens a pop-up with all of it (openCard below).
+const CARD_MAX = 16;
+function cardNumber(card) {
+  card = String(card ?? "");
+  const short = card.length > CARD_MAX ? card.slice(0, CARD_MAX) + "…" : card;
+  return `<span class="muted num card-peek-wrap">&nbsp;· <span class="card-peek" data-card="${esc(card)}"
+    title="Show full card number">Card ${esc(short)}</span></span>`;
 }
 function studentLink(userId, name) {
   return `<a class="name" href="#student/${encodeURIComponent(userId)}">${esc(name)}</a>`;
@@ -642,9 +685,11 @@ async function showBus(doorId) {
                  button = "Resolve", done = "Resolved") {
     const at = m.resolved[key];
     if (at) {
-      const by = byDriver.has(key) ? " by driver" : "";
+      // Tag who did it. Plain "Resolved" on an alert isn't an override; marking a kid
+      // dropped off is (it changes where they are).
+      const by = overrideTag(byDriver.has(key) ? "driver" : key.startsWith("never_off:") ? "manager" : null);
       resolved.push(eventRow("gray", iconName, title, text, time,
-        `<span class="status"><span class="dot green"></span>${done}${by} ${clock(at)}</span>${clipBtn}`));
+        `<span class="status"><span class="dot green"></span>${done} ${clock(at)}</span>${by}${clipBtn}`));
     } else {
       problems.push(eventRow(color, iconName, title, text, time,
         clipBtn + `<button class="pill-btn small" data-key="${esc(key)}" onclick="resolveIssue(this.dataset.key)">${button}</button>`));
@@ -656,9 +701,9 @@ async function showBus(doorId) {
   for (const s of m.on_bus) {
     const st = s.wrong_bus ? "wrong_bus" : ended ? "left_on_bus" : "aboard";
     const title = clipTitle(s.name, "boarded", m.name, clock(s.on_at));
-    const sub = `On at ${clock(s.on_at)}` + (s.on_override || s.last_override ? OVERRIDE_TAG : "")
-      + (s.wrong_bus ? " · not on this bus's roster" : "");
-    aboard.push(personRow(s.user_id, s.name, sub, st, clip(s.on_camera, s.on_at, title)));
+    const sub = `On at ${clock(s.on_at)}` + (s.wrong_bus ? " · not on this bus's roster" : "");
+    aboard.push(personRow(s.user_id, s.name, sub, st, clip(s.on_camera, s.on_at, title),
+                          s.on_override || s.last_override ? "driver" : null));
     if (s.wrong_bus) {
       issue(`wrong_bus:${s.user_id}`, "red", "warn", "Wrong bus",
         `${studentLink(s.user_id, s.name)} <span class="muted">${ended ? "was still aboard at the end, and is" : "is aboard but"} not on this bus's roster</span>`,
@@ -671,15 +716,16 @@ async function showBus(doorId) {
     if (s.marked_off) {
       // Never tapped off; someone pressed "Mark as dropped off". Clip is the boarding scan.
       const title = clipTitle(s.name, "boarded", m.name, clock(s.on_at));
-      off.push(personRow(s.user_id, s.name, `On at ${clock(s.on_at)} · marked dropped off at ${clock(s.marked_off)}`,
-        "dropped_off", clip(s.on_camera, s.on_at, title)));
+      const who = byDriver.has(`never_off:${s.user_id}`) ? "driver" : "manager";
+      off.push(personRow(s.user_id, s.name, `On at ${clock(s.on_at)} · off at ${clock(s.marked_off)}`,
+        "dropped_off", clip(s.on_camera, s.on_at, title), who));
       neverOff(s, title);
       continue;
     }
     const title = clipTitle(s.name, "got_off", m.name, clock(s.last_tap));
-    off.push(personRow(s.user_id, s.name, `On at ${clock(s.on_at)} · off at ${clock(s.last_tap)}`
-        + (s.on_override || s.last_override ? OVERRIDE_TAG : ""),
-      s.wrong_bus ? "wrong_bus" : "dropped_off", clip(s.last_camera, s.last_tap, title)));
+    off.push(personRow(s.user_id, s.name, `On at ${clock(s.on_at)} · off at ${clock(s.last_tap)}`,
+      s.wrong_bus ? "wrong_bus" : "dropped_off", clip(s.last_camera, s.last_tap, title),
+      s.on_override || s.last_override ? "driver" : null));
     if (s.wrong_bus) {
       issue(`wrong_bus:${s.user_id}`, "red", "warn", "Wrong bus",
         `${studentLink(s.user_id, s.name)} <span class="muted">rode this bus but is not on its roster</span>`,
@@ -688,11 +734,11 @@ async function showBus(doorId) {
   }
   for (const s of m.not_boarded) {
     waiting.push(personRow(s.user_id, s.name, m.route ? "No scan recorded" : "On this bus's roster",
-      ended ? "no_show" : "not_boarded", `<span class="clip"></span>`));
+      ended ? "no_show" : "not_boarded", ""));   // no scan, no clip: status goes all the way right
   }
   // Rejected scans (newest first from the server).
   for (const a of m.alerts) {
-    const who = a.user_id ? a.name : `Card ${a.card}`;
+    const who = a.user_id ? a.name : "Unknown card";
     const clipBtn = viewClip(a.camera_id, a.time, clipTitle(who, "rejected", m.name, clock(a.time)));
     if (a.user_id) {
       const where = a.assigned.length ? `assigned to ${esc(a.assigned.join(", "))}` : "not assigned to any bus";
@@ -700,7 +746,8 @@ async function showBus(doorId) {
         `${studentLink(a.user_id, a.name)} <span class="muted">scanned here, ${where}</span>`, a.time, clipBtn);
     } else {
       issue(`alert:${a.event_id}`, "amber", "card", "Unrecognized card",
-        `<b>Card ${esc(a.card)}</b> <span class="muted">is not linked to any student</span>`, a.time, clipBtn);
+        `<b>Unknown card</b> <span class="muted">is not linked to any student</span>${cardNumber(a.card)}`,
+        a.time, clipBtn);
     }
   }
 
@@ -716,24 +763,6 @@ async function showBus(doorId) {
       ${resolved.length ? `<details class="group-box" ${resolvedOpen ? "open" : ""} ontoggle="resolvedOpen = this.open">
           <summary class="group">${icon("chev", 16)}Resolved<span class="count">${resolved.length}</span></summary>${resolved.join("")}
         </details><div style="height:12px"></div>` : ""}
-    </section>`;
-
-  // Everything the driver did on the driver page, newest first, each with the
-  // clip from the bus camera at the moment they pressed the button.
-  const DRIVER_ACTIONS = { board: ["Boarded by driver", "people"], unboard: ["Unboarded by driver", "people"],
-                           dismiss: ["Dismissed by driver", "check"] };
-  const driverRows = [...m.driver_log].reverse().map(d => {
-    const [label, iconName] = DRIVER_ACTIONS[d.action];
-    const who = d.user_id ? studentLink(d.user_id, d.name) : `<b>${esc(d.name)}</b>`;
-    const text = d.action === "dismiss" ? `${who} <span class="muted">· ${esc(d.title)}</span>` : who;
-    return eventRow("amber", iconName, label, text, d.time,
-      viewClip(d.camera_id, d.time, clipTitle(d.name, `driver_${d.action}`, m.name, clock(d.time))));
-  });
-  const driverPanel = !driverRows.length ? "" : `
-    <section class="panel">
-      <div class="panel-head"><h2>Driver overrides</h2><span class="count">${driverRows.length}</span>
-        <span class="hint">Clip = the bus camera when the driver pressed the button</span></div>
-      ${driverRows.join("")}<div style="height:6px"></div>
     </section>`;
 
   // Boarding progress: roster students who scanned on, out of the roster.
@@ -786,7 +815,6 @@ async function showBus(doorId) {
     </section>
     ${progress}
     ${attention}
-    ${driverPanel}
     <section class="panel">
       <div class="panel-head"><h2>Passengers</h2>
         <span class="hint">Click a student for their history · camera for the scan clip</span></div>
@@ -827,11 +855,11 @@ async function showStudent(userId) {
       <td>${day(r.route_started)}</td>
       <td><div class="cell"><img class="bus-badge small" src="/bus.png" alt="">${esc(r.bus_name)}</div></td>
       <td>${amPm(r.route_started)}</td>
-      <td class="num">${r.on ? clock(r.on) + (r.on_override ? OVERRIDE_TAG : "") + clip(r.on_camera, r.on,
+      <td class="num">${r.on ? clock(r.on) + clip(r.on_camera, r.on,
         clipTitle(s.name, r.status === "rejected" ? "rejected" : "boarded", r.bus_name, `${day(r.on)} ${clock(r.on)}`)) : "—"}</td>
-      <td class="num">${r.off ? clock(r.off) + (r.off_override ? OVERRIDE_TAG : "") + clip(r.off_camera, r.off,
+      <td class="num">${r.off ? clock(r.off) + clip(r.off_camera, r.off,
         clipTitle(s.name, "got_off", r.bus_name, `${day(r.off)} ${clock(r.off)}`)) : "—"}</td>
-      <td>${status(r.status)}${r.resolved_at ? ` <span class="muted">· ${r.status === "dropped_off" ? "Marked" : "Resolved"} ${day(r.resolved_at)} ${clock(r.resolved_at)}</span>` : ""}</td>
+      <td>${status(r.status, r.override)}${r.resolved_at ? ` <span class="muted">· Resolved ${day(r.resolved_at)} ${clock(r.resolved_at)}</span>` : ""}</td>
     </tr>`).join("");
 
   $("page").innerHTML = `
@@ -1025,7 +1053,22 @@ document.addEventListener("click", e => {
   openClip(link.dataset.camera, Number(link.dataset.at), JSON.parse(link.dataset.title));
 }, true);
 
-document.addEventListener("keydown", e => { if (e.key === "Escape") closeClip(); });
+document.addEventListener("keydown", e => { if (e.key === "Escape") { closeClip(); closeCard(); } });
+
+// ------------------------------------------------- unknown card pop-up ----
+// Click the card number (shown on hover) for the full number.
+
+function openCard(card) {
+  $("card-full").textContent = card;
+  $("card-popup").querySelector(".pill-btn").textContent = "Copy";
+  $("card-popup").hidden = false;
+}
+function closeCard() { $("card-popup").hidden = true; }
+
+document.addEventListener("click", e => {
+  const peek = e.target.closest(".card-peek");
+  if (peek) openCard(peek.dataset.card);
+});
 
 // ---------------------------------------------------- roster refresh ----
 
@@ -1064,7 +1107,7 @@ loadPhotos().then(refresh);
 // Skip a redraw while the mouse is on a bar or an issue preview, so the
 // hover label doesn't blink away every 2 s.
 setInterval(() => {
-  if (!document.querySelector(".bar:hover, .attn-wrap:hover, .has-preview:hover")) refresh();
+  if (!document.querySelector(".bar:hover, .attn-wrap:hover, .has-preview:hover, .event:has(.card-peek-wrap):hover")) refresh();
 }, 2000);
 </script>
 </body>

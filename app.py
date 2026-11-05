@@ -70,7 +70,8 @@ PARENTS_FILE = HERE / "parents.json"
 #             "driver_log": [
 #                 {"action": "board" | "unboard" | "dismiss", "time": 1791847950,
 #                  "user_id": "..." or None, "name": "...", "camera_id": "..." or None,
-#                  "key": "alert:<event_id>", "title": "Card rejected"},   # dismiss only
+#                  "key": "alert:<event_id>", "title": "Card rejected",    # dismiss only
+#                  "card": "102|53031" or None},                          # unknown cards only
 #             ],
 #         },
 #     },
@@ -215,8 +216,10 @@ def list_flags(bus, on_bus, off_bus):
             flags.append({"key": f"alert:{event_id}", "title": "Card rejected",
                           "who": a["name"], "time": a["time"]})
         else:
+            # The card number is long and means nothing at a glance; the manager
+            # page shows it behind a "See card number" button.
             flags.append({"key": f"alert:{event_id}", "title": "Unrecognized card",
-                          "who": f"Card {a['card']}", "time": a["time"]})
+                          "who": "Unknown card", "card": a["card"], "time": a["time"]})
     for s in on_bus + off_bus:
         if s["wrong_bus"]:
             flags.append({"key": f"wrong_bus:{s['user_id']}", "title": "Wrong bus",
@@ -270,6 +273,8 @@ def student_rows(route, user_id):
     bus = state["buses"].get(route["door_id"]) or {}
     assigned = user_id in route["roster"]
     resolved = route.get("resolved", {})   # routes saved before "Resolve" existed have none
+    # Issues the driver dismissed on the driver page; the rest were the manager page.
+    by_driver = {d["key"] for d in route.get("driver_log", []) if d["action"] == "dismiss"}
     rows = []
 
     taps = counted_taps(route["taps"]).get(user_id, [])
@@ -282,6 +287,8 @@ def student_rows(route, user_id):
                    "on_override": bool(taps[i].get("override")),
                    "off_override": bool(off and taps[i + 1].get("override"))}
         resolved_at = None
+        # Who changed this ride by hand: "driver", "manager", or None (cards only).
+        override = "driver" if cameras["on_override"] or cameras["off_override"] else None
         if route["roster"] and not assigned:
             status = "wrong_bus"
             resolved_at = resolved.get(f"wrong_bus:{user_id}")
@@ -294,8 +301,11 @@ def student_rows(route, user_id):
             resolved_at = resolved.get(f"never_off:{user_id}")
             if resolved_at:
                 status = "dropped_off"   # marked as dropped off by hand; no off tap
+                off = resolved_at        # ...so the Off column shows when
+                override = "driver" if f"never_off:{user_id}" in by_driver else "manager"
+                resolved_at = None       # shown as the Off time + tag, not "Resolved ..."
         rows.append({**base, **cameras, "on": on, "off": off, "status": status,
-                     "resolved_at": resolved_at})
+                     "resolved_at": resolved_at, "override": override})
 
     for event_id, alert in route["alerts"].items():
         if alert["user_id"] == user_id:
@@ -923,7 +933,7 @@ async def driver_dismiss(door_id: str, request: Request):
         user_id = key.split(":", 1)[1]
     bus["driver_log"].append({"action": "dismiss", "time": now, "user_id": user_id,
                               "name": issue["who"], "camera_id": bus.get("camera_id"),
-                              "key": key, "title": issue["title"]})
+                              "key": key, "title": issue["title"], "card": issue.get("card")})
     save_state()
     print(f"[driver] {bus['name']}: dismissed {issue['title']} ({issue['who']})")
     notify(door_id, {"kind": "changed"})

@@ -83,7 +83,7 @@
   .title.red { color: var(--red); } .title.amber { color: var(--amber); } .title.green { color: var(--green); }
   .row .status { width: 140px; }
   .row .pill-btn { min-width: 120px; }
-  .row .time { color: var(--muted); font-size: 14px; white-space: nowrap; }
+  .row .time { color: var(--muted); font-size: 14px; font-weight: 500; white-space: nowrap; }
 
   /* Student status, readable at a quick scroll: a colored stripe down the
      left edge, a ring around the photo, and the status in that color.
@@ -151,11 +151,36 @@
            box-shadow: 0 8px 28px rgba(0,0,0,.2); }
   .toast[hidden] { display: none; }
 
-  /* iPad portrait / phone */
+  /* Phone. Rows become two lines so nothing gets squeezed into a narrow column:
+       issue:   [icon] title · time        student: [photo] name          [Board]
+                       name + text                          ● status
+                       [Dismiss]                                                   */
   @media (max-width: 700px) {
-    .page-head { flex-wrap: wrap; }
-    .row .status { width: auto; }
-    .row .pill-btn { min-width: 0; }
+    body { font-size: 15px; }
+    .content { padding: 12px 12px 32px; }
+    /* line 1: back + bus name; line 2: Live · count ...... route button */
+    .page-head { flex-wrap: wrap; gap: 10px 12px; margin-bottom: 12px; }
+    .page-head h1 { font-size: 22px; flex: 1 1 calc(100% - 64px); }
+    .page-head .facts { order: 3; flex: 1; }
+    .page-head > .pill-btn { order: 4; height: 44px; padding: 0 18px; }
+    .panel-head { padding: 14px 16px 6px; }
+    .row { gap: 12px; padding: 12px 16px; min-height: 0; }
+
+    .row.issue { display: grid; grid-template-columns: 48px 1fr; align-items: start; row-gap: 10px; }
+    .row.issue .pill-btn { grid-column: 2; justify-self: start; height: 40px; min-width: 0; }
+
+    .row.student { display: grid; grid-template-columns: 48px 1fr auto; column-gap: 12px; row-gap: 2px;
+                   padding-left: 10px; }
+    .student .avatar { grid-row: 1 / 3; }
+    .student .who { grid-column: 2; }
+    .student .status { grid-column: 2; width: auto; font-size: 14px; }
+    .student .status .dot { width: 10px; height: 10px; }
+    .student .pill-btn { grid-column: 3; grid-row: 1 / 3; height: 44px; min-width: 96px; padding: 0 16px; }
+
+    .avatar.huge { width: 160px; height: 160px; font-size: 56px; }
+    .scan-card { padding: 28px 20px 24px; }
+    .scan-name { font-size: 30px; }
+    .scan-status { font-size: 19px; }
   }
 </style>
 </head>
@@ -286,7 +311,7 @@ const ISSUES = {
   "Card rejected":     ["amber", "card", "scanned a card that isn't allowed on this bus"],
   "Unrecognized card": ["amber", "card", "isn't linked to any student"],
   "Wrong bus":         ["red", "warn", "is not on this bus's roster"],
-  "Never tapped off":  ["red", "warn", "was still on the bus when the route ended. Check the bus."],
+  "Never tapped off":  ["red", "warn", "was still aboard when the route ended"],
 };
 
 function draw() {
@@ -312,11 +337,10 @@ function draw() {
   const issueRows = m.issues.map(i => {
     const [color, iconName, text] = ISSUES[i.title];
     const button = i.key.startsWith("never_off:") ? "Mark as dropped off" : "Dismiss";
-    return `<div class="row">
+    return `<div class="row issue">
       <div class="icon-circle ${color}">${icon(iconName, 22)}</div>
-      <div class="who"><div class="title ${color}">${esc(i.title)}</div>
+      <div class="who"><div class="title ${color}">${esc(i.title)} <span class="time">· ${clock(i.time)}</span></div>
         <div><b>${esc(i.who)}</b> <span class="muted">${text}</span></div></div>
-      <span class="time">${clock(i.time)}</span>
       <button class="pill-btn" data-key="${esc(i.key)}" data-label="${button}">${button}</button>
     </div>`;
   }).join("");
@@ -424,7 +448,7 @@ function showScan(ev) {
   if (ev.kind === "rejected") {
     color = "red";
     label = ev.user_id ? "Card rejected" : "Unrecognized card";
-    name = ev.user_id ? ev.name : `Card ${ev.card}`;
+    name = ev.user_id ? ev.name : "Unknown card";   // the card number means nothing to a driver
     sub = ev.user_id ? where : "Not linked to any student";
   } else if (ev.wrong_bus) {
     color = "red";
